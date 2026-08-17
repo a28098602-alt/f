@@ -8,6 +8,7 @@ TOKEN = "8983512909:AAEaeZ170QSAwwOWnipnrXtSukwwepInlrI"
 # آیدی عددی کانال
 CHANNEL_ID = -1001188593103
 CHANNEL_LINK = "https://t.me/etemad_Rayan_gostar"
+CHANNEL_USERNAME = "@Rayan_panel1bot"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -15,7 +16,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
         if member.status in ["member", "administrator", "creator"]:
-            # عضویت تأیید شد
+            # عضویت تأیید شد - نمایش پیام اصلی
             text = (
                 "#Violex | خرید استارز و پرمیوم\n"
                 "ربات Vincent\n\n"
@@ -36,14 +37,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def send_force_subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
-        "🔔 برای استفاده از ربات ابتدا باید عضو کانال‌های زیر شوید:\n\n"
-        f"👉 {CHANNEL_LINK}"
+        "⚠️ *برای استفاده از ربات ابتدا باید عضو کانال‌های زیر شوید:*\n\n"
+        f"📢 عضویت در {CHANNEL_USERNAME}"
     )
     keyboard = [
         [InlineKeyboardButton("📢 عضویت در کانال", url=CHANNEL_LINK)],
-        [InlineKeyboardButton("✅ بررسی عضویت", callback_data="check_sub")]
+        [InlineKeyboardButton("✅ عضو شدم", callback_data="check_sub")]
     ]
-    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text(
+        text, 
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='Markdown'
+    )
 
 async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -53,8 +58,8 @@ async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
         if member.status in ["member", "administrator", "creator"]:
+            # عضویت تأیید شد - نمایش پیام اصلی
             text = (
-                "✅ عضویت شما تأیید شد!\n\n"
                 "#Violex | خرید استارز و پرمیوم\n"
                 "ربات Vincent\n\n"
                 "بهترین و سریعترین ربات خرید استارز و پرمیوم و کیفیت تلگرام ✅\n\n"
@@ -68,21 +73,16 @@ async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE)
             keyboard = [[InlineKeyboardButton("🛒 ثبت سفارش", callback_data="order")]]
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
         else:
+            # پیام خطا برای کاربرانی که عضو نشده‌اند
             await query.edit_message_text(
-                "❌ هنوز عضو کانال نشده‌اید.\n"
-                f"لطفاً ابتدا عضو شوید: {CHANNEL_LINK}\n\n"
-                "سپس روی دکمه 'بررسی مجدد' کلیک کنید.",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📢 عضویت در کانال", url=CHANNEL_LINK)],
-                    [InlineKeyboardButton("🔄 بررسی مجدد", callback_data="check_sub")]
-                ])
+                "❌ *هنوز عضو کانال نشده‌اید.*\n"
+                f"لطفاً ابتدا عضو شوید: {CHANNEL_LINK}",
+                parse_mode='Markdown'
             )
     except Exception:
         await query.edit_message_text(
             "❌ خطا در بررسی عضویت. لطفاً دوباره تلاش کنید.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔄 بررسی مجدد", callback_data="check_sub")]
-            ])
+            parse_mode='Markdown'
         )
 
 async def order_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -94,18 +94,23 @@ async def order_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
         if member.status in ["member", "administrator", "creator"]:
             await query.edit_message_text(
-                "🛒 سفارش شما با موفقیت ثبت شد!\n\n"
+                "🛒 *سفارش شما با موفقیت ثبت شد!*\n\n"
                 "✅ سفارش شما در صف پردازش قرار گرفت.\n"
                 "⏳ به زودی با شما تماس گرفته می‌شود.\n\n"
-                "پشتیبانی: ViolexSup@"
+                "پشتیبانی: ViolexSup@",
+                parse_mode='Markdown'
             )
         else:
             await query.edit_message_text(
-                "❌ شما عضو کانال نیستید!\n"
-                f"لطفاً ابتدا عضو شوید: {CHANNEL_LINK}"
+                "❌ *شما عضو کانال نیستید!*\n"
+                f"لطفاً ابتدا عضو شوید: {CHANNEL_LINK}",
+                parse_mode='Markdown'
             )
     except Exception:
-        await query.edit_message_text("❌ خطا در ثبت سفارش. لطفاً دوباره تلاش کنید.")
+        await query.edit_message_text(
+            "❌ خطا در ثبت سفارش. لطفاً دوباره تلاش کنید.",
+            parse_mode='Markdown'
+        )
 
 def main():
     app = Application.builder().token(TOKEN).build()
@@ -115,6 +120,8 @@ def main():
     app.add_handler(CallbackQueryHandler(order_handler, pattern="order"))
 
     print("🤖 ربات Violex با موفقیت روشن شد...")
+    print(f"📢 کانال اجباری: {CHANNEL_LINK}")
+    print(f"🆔 آیدی کانال: {CHANNEL_ID}")
     
     app.run_polling()
 
