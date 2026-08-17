@@ -18,18 +18,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if member.status in ["member", "administrator", "creator"]:
             # عضویت تأیید شد - نمایش پیام اصلی
             text = (
-                "#Violex | خرید استارز و پرمیوم\n"
-                "ربات Vincent\n\n"
-                "بهترین و سریعترین ربات خرید استارز و پرمیوم و کیفیت تلگرام ✅\n\n"
-                "✅ دارای اعتبار و اعتماد کاربران\n"
-                "✅ ثبت سریع سفارش | تحویل آنی سفارش ها\n"
-                "✅ پشتیبانی #24/7 آنلاین\n\n"
-                "پشتیبانی : ViolexSup@\n"
-                "ViolexReport@ : گزارشات ❤️\n\n"
-                "روی Start بزن و سفارش مد نظرتو ثبت کن 🚀"
+                "⭐ <b>به بزرگترین مارکت خدمات تلگرام « رایان | Ryan » خوش آمدید!</b> ⭐\n\n"
+                "✅ اینجا همه‌چیز با بالاترین کیفیت، ارزان‌ترین قیمت و تحویل آنی به دستت می‌رسه!\n\n"
+                "⭐ استارز تلگرام  |  💎 ارز تون / Gram\n"
+                "💎 پرمیوم تلگرام  |  🪙 شارژ آنی تون بالانس\n"
+                "🎁 گیفت‌های استارزی  |  🪙 ارز ترون / TRX\n"
+                "🎁 گیوای استارزی  |  ⭐ ری اکشن استارزی\n"
+                "⚡ بوست تلگرام\n\n"
+                "<b>برای خرید یکی از گزینه‌های منوی زیر رو انتخاب کن 👇</b>"
             )
             keyboard = [[InlineKeyboardButton("🛒 ثبت سفارش", callback_data="order")]]
-            await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+            await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         else:
             await send_force_subscribe(update, context)
     except Exception:
@@ -37,8 +36,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def send_force_subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
-        "⚠️ <b>برای استفاده از ربات ابتدا باید عضو کانال‌های زیر شوید:</b>\n\n"
-        f"📢 عضویت در {CHANNEL_USERNAME}"
+        "⚠️ <b>برای استفاده از ربات ابتدا باید عضو کانال‌های زیر شوید:</b>"
     )
     keyboard = [
         [InlineKeyboardButton("📢 عضویت در کانال", url=CHANNEL_LINK)],
@@ -60,29 +58,34 @@ async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if member.status in ["member", "administrator", "creator"]:
             # عضویت تأیید شد - نمایش پیام اصلی
             text = (
-                "#Violex | خرید استارز و پرمیوم\n"
-                "ربات Vincent\n\n"
-                "بهترین و سریعترین ربات خرید استارز و پرمیوم و کیفیت تلگرام ✅\n\n"
-                "✅ دارای اعتبار و اعتماد کاربران\n"
-                "✅ ثبت سریع سفارش | تحویل آنی سفارش ها\n"
-                "✅ پشتیبانی #24/7 آنلاین\n\n"
-                "پشتیبانی : ViolexSup@\n"
-                "ViolexReport@ : گزارشات ❤️\n\n"
-                "روی Start بزن و سفارش مد نظرتو ثبت کن 🚀"
+                "⭐ <b>به بزرگترین مارکت خدمات تلگرام « رایان | Ryan » خوش آمدید!</b> ⭐\n\n"
+                "✅ اینجا همه‌چیز با بالاترین کیفیت، ارزان‌ترین قیمت و تحویل آنی به دستت می‌رسه!\n\n"
+                "⭐ استارز تلگرام  |  💎 ارز تون / Gram\n"
+                "💎 پرمیوم تلگرام  |  🪙 شارژ آنی تون بالانس\n"
+                "🎁 گیفت‌های استارزی  |  🪙 ارز ترون / TRX\n"
+                "🎁 گیوای استارزی  |  ⭐ ری اکشن استارزی\n"
+                "⚡ بوست تلگرام\n\n"
+                "<b>برای خرید یکی از گزینه‌های منوی زیر رو انتخاب کن 👇</b>"
             )
             keyboard = [[InlineKeyboardButton("🛒 ثبت سفارش", callback_data="order")]]
-            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         else:
             # پیام خطا برای کاربرانی که عضو نشده‌اند
             await query.edit_message_text(
-                "❌ <b>هنوز عضو کانال نشده‌اید.</b>\n"
-                f"لطفاً ابتدا عضو شوید: {CHANNEL_LINK}",
-                parse_mode='HTML'
+                "❌ <b>هنوز عضو کانال نشده‌اید لطفاً ابتدا عضو کانال شوید.</b>",
+                parse_mode='HTML',
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📢 عضویت در کانال", url=CHANNEL_LINK)],
+                    [InlineKeyboardButton("✅ عضو شدم", callback_data="check_sub")]
+                ])
             )
     except Exception:
         await query.edit_message_text(
-            "❌ خطا در بررسی عضویت. لطفاً دوباره تلاش کنید.",
-            parse_mode='HTML'
+            "❌ <b>خطا در بررسی عضویت. لطفاً دوباره تلاش کنید.</b>",
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 بررسی مجدد", callback_data="check_sub")]
+            ])
         )
 
 async def order_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -102,9 +105,12 @@ async def order_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             await query.edit_message_text(
-                "❌ <b>شما عضو کانال نیستید!</b>\n"
-                f"لطفاً ابتدا عضو شوید: {CHANNEL_LINK}",
-                parse_mode='HTML'
+                "❌ <b>هنوز عضو کانال نشده‌اید لطفاً ابتدا عضو کانال شوید.</b>",
+                parse_mode='HTML',
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📢 عضویت در کانال", url=CHANNEL_LINK)],
+                    [InlineKeyboardButton("✅ عضو شدم", callback_data="check_sub")]
+                ])
             )
     except Exception:
         await query.edit_message_text(
@@ -119,7 +125,7 @@ def main():
     application.add_handler(CallbackQueryHandler(check_subscription, pattern="check_sub"))
     application.add_handler(CallbackQueryHandler(order_handler, pattern="order"))
 
-    print("🤖 ربات Violex با موفقیت روشن شد...")
+    print("🤖 ربات Ryan با موفقیت روشن شد...")
     print(f"📢 کانال اجباری: {CHANNEL_LINK}")
     print(f"🆔 آیدی کانال: {CHANNEL_ID}")
     
