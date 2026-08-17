@@ -95,7 +95,7 @@ async def order_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "🛒 <b>سفارش شما با موفقیت ثبت شد!</b>\n\n"
                 "✅ سفارش شما در صف پردازش قرار گرفت.\n"
                 "⏳ به زودی با شما تماس گرفته می‌شود.\n\n"
-                "پشتیبانی: ViolexSup@",
+                "پشتیبانی: @ViolexSup",
                 parse_mode='HTML'
             )
         else:
