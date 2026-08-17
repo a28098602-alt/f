@@ -1,19 +1,14 @@
 import asyncio
-import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
+# توکن ربات شما
 TOKEN = "8983512909:AAEaeZ170QSAwwOWnipnrXtSukwwepInlrI"
+
+# آیدی عددی کانال
 CHANNEL_ID = -1001188593103
 CHANNEL_LINK = "https://t.me/etemad_Rayan_gostar"
 CHANNEL_USERNAME = "@Rayan_panel1bot"
-
-# حذف Webhook قبلی
-try:
-    requests.get(f"https://api.telegram.org/bot{TOKEN}/deleteWebhook")
-    print("✅ Webhook حذف شد")
-except:
-    pass
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -21,6 +16,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
         if member.status in ["member", "administrator", "creator"]:
+            # عضویت تأیید شد - نمایش پیام اصلی
             text = (
                 "#Violex | خرید استارز و پرمیوم\n"
                 "ربات Vincent\n\n"
@@ -62,6 +58,7 @@ async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
         if member.status in ["member", "administrator", "creator"]:
+            # عضویت تأیید شد - نمایش پیام اصلی
             text = (
                 "#Violex | خرید استارز و پرمیوم\n"
                 "ربات Vincent\n\n"
@@ -76,6 +73,7 @@ async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE)
             keyboard = [[InlineKeyboardButton("🛒 ثبت سفارش", callback_data="order")]]
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
         else:
+            # پیام خطا برای کاربرانی که عضو نشده‌اند
             await query.edit_message_text(
                 "❌ <b>هنوز عضو کانال نشده‌اید.</b>\n"
                 f"لطفاً ابتدا عضو شوید: {CHANNEL_LINK}",
@@ -125,7 +123,6 @@ def main():
     print(f"📢 کانال اجباری: {CHANNEL_LINK}")
     print(f"🆔 آیدی کانال: {CHANNEL_ID}")
     
-    # استفاده از drop_pending_updates برای جلوگیری از Conflict
     application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
