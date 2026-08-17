@@ -16,7 +16,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
         if member.status in ["member", "administrator", "creator"]:
-            # عضویت تأیید شد - نمایش پیام اصلی
             text = (
                 "⭐ <b>به بزرگترین مارکت خدمات تلگرام « رایان | Ryan » خوش آمدید!</b> ⭐\n\n"
                 "✅ اینجا همه‌چیز با بالاترین کیفیت، ارزان‌ترین قیمت و تحویل آنی به دستت می‌رسه!\n\n"
@@ -35,9 +34,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_force_subscribe(update, context)
 
 async def send_force_subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = (
-        "⚠️ <b>برای استفاده از ربات ابتدا باید عضو کانال‌های زیر شوید:</b>"
-    )
+    text = "⚠️ <b>برای استفاده از ربات ابتدا باید عضو کانال‌های زیر شوید:</b>"
     keyboard = [
         [InlineKeyboardButton("📢 عضویت در کانال", url=CHANNEL_LINK)],
         [InlineKeyboardButton("✅ عضو شدم", callback_data="check_sub")]
@@ -56,7 +53,6 @@ async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
         if member.status in ["member", "administrator", "creator"]:
-            # عضویت تأیید شد - نمایش پیام اصلی
             text = (
                 "⭐ <b>به بزرگترین مارکت خدمات تلگرام « رایان | Ryan » خوش آمدید!</b> ⭐\n\n"
                 "✅ اینجا همه‌چیز با بالاترین کیفیت، ارزان‌ترین قیمت و تحویل آنی به دستت می‌رسه!\n\n"
@@ -70,7 +66,6 @@ async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE)
             keyboard = [[InlineKeyboardButton("🛒 ثبت سفارش", callback_data="order")]]
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         else:
-            # پیام خطا برای کاربرانی که عضو نشده‌اند
             await query.edit_message_text(
                 "❌ <b>هنوز عضو کانال نشده‌اید لطفاً ابتدا عضو کانال شوید.</b>",
                 parse_mode='HTML',
