@@ -7,102 +7,185 @@ import os
 import platform
 import psutil
 import sys
+import threading
 from datetime import datetime, timedelta
-from threading import Timer
+from threading import Timer, Lock
+from typing import Optional, Dict, List, Tuple, Any
+from dotenv import load_dotenv
 
-TOKEN = "8532288807:AAGJXJnmHJ68Cyh7eMK9muIcZydKAZLayVQ"
+# ==============================
+# 📌 بارگذاری متغیرهای محیطی
+# ==============================
+load_dotenv()
+
+TOKEN = os.getenv("BOT_TOKEN")
+if not TOKEN:
+    raise ValueError("❌ توکن ربات در فایل .env پیدا نشد!")
+
+OWNER_ID = int(os.getenv("OWNER_ID", "7803165903"))
 BASE_URL = f"https://api.telegram.org/bot{TOKEN}"
-
-OWNER_ID = 7803165903
 START_TIME = time.time()
 
-service_lock_status = {}
-welcome_status = {}
-panel_users = {}
-panel_timers = {}
+# ==============================
+# 📊 مدیریت وضعیت‌ها
+# ==============================
+service_lock_status: Dict[int, bool] = {}
+welcome_status: Dict[int, bool] = {}
+panel_users: Dict[int, int] = {}
+panel_timers: Dict[int, Timer] = {}
+user_states: Dict[int, str] = {}  # برای مدیریت وضعیت کاربران
 
 STATS_FILE = "stats.json"
+file_lock = Lock()
 
 # متغیرهای ارسال همگانی
-broadcast_data = {}
-broadcast_target = {}
+broadcast_data: Dict[int, str] = {}
+broadcast_target: Dict[int, str] = {}
 
-def load_stats():
-    if os.path.exists(STATS_FILE):
-        try:
-            with open(STATS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            return {"users": [], "users_id": [], "groups": [], "groups_id": []}
-    return {"users": [], "users_id": [], "groups": [], "groups_id": []}
-
-def save_stats(stats):
-    try:
-        with open(STATS_FILE, "w", encoding="utf-8") as f:
-            json.dump(stats, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.error(f"خطا در ذخیره آمار: {e}")
-
-bot_stats = load_stats()
-
+# ==============================
+# 📝 تنظیمات لاگینگ
+# ==============================
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-def get_iran_time():
+# ==============================
+# 💾 مدیریت فایل آمار
+# ==============================
+def load_stats() -> Dict:
+    """بارگذاری آمار از فایل"""
+    if os.path.exists(STATS_FILE):
+        try:
+            with file_lock:
+                with open(STATS_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(f"خطا در بارگذاری آمار: {e}")
+            return {"users": [], "users_id": [], "groups": [], "groups_id": []}
+    return {"users": [], "users_id": [], "groups": [], "groups_id": []}
+
+def save_stats(stats: Dict) -> bool:
+    """ذخیره آمار در فایل"""
+    try:
+        with file_lock:
+            with open(STATS_FILE, "w", encoding="utf-8") as f:
+                json.dump(stats, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        logger.error(f"خطا در ذخیره آمار: {e}")
+        return False
+
+bot_stats = load_stats()
+
+# ==============================
+# 🕐 توابع کمکی زمان
+# ==============================
+def get_iran_time() -> Tuple[str, str]:
+    """دریافت تاریخ و زمان شمسی"""
     now = datetime.now()
     jalali = jdatetime.datetime.fromgregorian(datetime=now)
-    weekdays = {6: 'شنبه', 0: 'یکشنبه', 1: 'دوشنبه', 2: 'سه‌شنبه', 3: 'چهارشنبه', 4: 'پنج‌شنبه', 5: 'جمعه'}
+    weekdays = {6: 'شنبه', 0: 'یکشنبه', 1: 'دوشنبه', 2: 'سه‌شنبه', 
+                3: 'چهارشنبه', 4: 'پنج‌شنبه', 5: 'جمعه'}
     weekday_name = weekdays.get(jalali.weekday(), '')
     date_str = f"{weekday_name} {jalali.day} - {jalali.month} - {jalali.year}"
     time_str = f"{jalali.hour:02d}:{jalali.minute:02d}:{jalali.second:02d}"
     return date_str, time_str
 
-def send_message(chat_id, text, keyboard=None, reply_to_message_id=None):
+# ==============================
+# 📨 توابع ارتباط با API تلگرام
+# ==============================
+def send_message(chat_id: int, text: str, keyboard: Optional[str] = None, 
+                 reply_to_message_id: Optional[int] = None) -> Optional[requests.Response]:
+    """ارسال پیام با مدیریت خطا"""
+    if len(text) > 4096:
+        text = text[:4093] + "..."
+    
     url = f"{BASE_URL}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True
+    }
     if keyboard:
         payload["reply_markup"] = keyboard
     if reply_to_message_id:
         payload["reply_to_message_id"] = reply_to_message_id
+    
     try:
-        response = requests.post(url, json=payload, timeout=10)
-        if response.status_code != 200:
-            logger.error(f"خطا در ارسال: {response.text}")
-        return response
+        response = requests.post(url, json=payload, timeout=15)
+        if response.status_code == 200:
+            return response
+        elif response.status_code == 429:
+            # محدودیت نرخ ارسال
+            retry_after = response.json().get("parameters", {}).get("retry_after", 5)
+            logger.warning(f"محدودیت ارسال، صبر {retry_after} ثانیه")
+            time.sleep(retry_after)
+            return send_message(chat_id, text, keyboard, reply_to_message_id)
+        else:
+            logger.error(f"خطا در ارسال: {response.status_code} - {response.text}")
+            return None
+    except requests.exceptions.Timeout:
+        logger.error("تایم‌اوت در ارسال پیام")
+        return None
     except Exception as e:
-        logger.error(f"خطا: {e}")
+        logger.error(f"خطا در ارسال پیام: {e}")
         return None
 
-def delete_message(chat_id, message_id):
+def delete_message(chat_id: int, message_id: int) -> bool:
+    """حذف پیام با مدیریت خطا"""
     url = f"{BASE_URL}/deleteMessage"
     payload = {"chat_id": chat_id, "message_id": message_id}
     try:
         response = requests.post(url, json=payload, timeout=10)
-        if response.status_code != 200:
-            logger.error(f"خطا در حذف: {response.text}")
-        return response
+        if response.status_code == 200:
+            return True
+        elif response.status_code == 400:
+            # پیام قبلاً حذف شده یا وجود ندارد
+            return False
+        else:
+            logger.error(f"خطا در حذف: {response.status_code}")
+            return False
     except Exception as e:
-        logger.error(f"خطا در حذف: {e}")
-        return None
+        logger.error(f"خطا در حذف پیام: {e}")
+        return False
 
-def edit_message(chat_id, message_id, text, keyboard=None):
+def edit_message(chat_id: int, message_id: int, text: str, 
+                 keyboard: Optional[str] = None) -> bool:
+    """ویرایش پیام با مدیریت خطا"""
+    if len(text) > 4096:
+        text = text[:4093] + "..."
+    
     url = f"{BASE_URL}/editMessageText"
-    payload = {"chat_id": chat_id, "message_id": message_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
+    payload = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True
+    }
     if keyboard:
         payload["reply_markup"] = keyboard
+    
     try:
         response = requests.post(url, json=payload, timeout=10)
-        if response.status_code != 200:
-            logger.error(f"خطا در ویرایش: {response.text}")
-        return response
+        if response.status_code == 200:
+            return True
+        elif response.status_code == 400:
+            # پیام تغییری نکرده یا حذف شده
+            return False
+        else:
+            logger.error(f"خطا در ویرایش: {response.status_code}")
+            return False
     except Exception as e:
-        logger.error(f"خطا: {e}")
-        return None
+        logger.error(f"خطا در ویرایش پیام: {e}")
+        return False
 
-def answer_callback(callback_id, text=None, show_alert=False):
+def answer_callback(callback_id: str, text: Optional[str] = None, 
+                    show_alert: bool = False) -> None:
+    """پاسخ به کالبک"""
     url = f"{BASE_URL}/answerCallbackQuery"
     payload = {"callback_query_id": callback_id}
     if text:
@@ -111,9 +194,10 @@ def answer_callback(callback_id, text=None, show_alert=False):
     try:
         requests.post(url, json=payload, timeout=10)
     except Exception as e:
-        logger.error(f"خطا: {e}")
+        logger.error(f"خطا در پاسخ کالبک: {e}")
 
-def get_chat_member(chat_id, user_id):
+def get_chat_member(chat_id: int, user_id: int) -> Dict:
+    """دریافت اطلاعات عضو گروه"""
     url = f"{BASE_URL}/getChatMember"
     payload = {"chat_id": chat_id, "user_id": user_id}
     try:
@@ -122,10 +206,36 @@ def get_chat_member(chat_id, user_id):
             return response.json().get("result", {})
         return {}
     except Exception as e:
-        logger.error(f"خطا: {e}")
+        logger.error(f"خطا در دریافت عضو: {e}")
         return {}
 
-def promote_owner(chat_id, user_id):
+def get_updates(offset: Optional[int] = None, timeout: int = 30) -> List[Dict]:
+    """دریافت آپدیت‌ها با مدیریت خطا"""
+    url = f"{BASE_URL}/getUpdates"
+    params = {"timeout": timeout, "offset": offset}
+    try:
+        response = requests.get(url, params=params, timeout=timeout + 5)
+        if response.status_code == 200:
+            return response.json().get("result", [])
+        elif response.status_code == 429:
+            retry_after = response.json().get("parameters", {}).get("retry_after", 5)
+            time.sleep(retry_after)
+            return get_updates(offset, timeout)
+        else:
+            logger.error(f"خطا در دریافت آپدیت: {response.status_code}")
+            return []
+    except requests.exceptions.Timeout:
+        logger.warning("تایم‌اوت در دریافت آپدیت")
+        return []
+    except Exception as e:
+        logger.error(f"خطا در دریافت آپدیت: {e}")
+        return []
+
+# ==============================
+# 🔧 توابع مدیریت گروه
+# ==============================
+def promote_owner(chat_id: int, user_id: int) -> bool:
+    """تبدیل کاربر به ادمین با تمام دسترسی‌ها"""
     url = f"{BASE_URL}/promoteChatMember"
     payload = {
         "chat_id": chat_id,
@@ -146,16 +256,16 @@ def promote_owner(chat_id, user_id):
     try:
         response = requests.post(url, json=payload, timeout=10)
         if response.status_code == 200:
-            logger.info(f"✅ سازنده {user_id} در گروه {chat_id} ادمین شد")
+            logger.info(f"✅ کاربر {user_id} ادمین شد")
             return True
-        else:
-            logger.error(f"❌ خطا در ادمین کردن: {response.text}")
-            return False
+        logger.error(f"❌ خطا در ادمین کردن: {response.text}")
+        return False
     except Exception as e:
         logger.error(f"❌ خطا: {e}")
         return False
 
-def set_owner_title(chat_id, user_id):
+def set_owner_title(chat_id: int, user_id: int) -> bool:
+    """تنظیم عنوان برای ادمین"""
     url = f"{BASE_URL}/setChatAdministratorCustomTitle"
     payload = {
         "chat_id": chat_id,
@@ -164,45 +274,25 @@ def set_owner_title(chat_id, user_id):
     }
     try:
         response = requests.post(url, json=payload, timeout=10)
-        if response.status_code == 200:
-            logger.info(f"✅ لقب سازنده در گروه {chat_id} تنظیم شد")
-            return True
-        else:
-            logger.error(f"❌ خطا در تنظیم لقب: {response.text}")
-            return False
+        return response.status_code == 200
     except Exception as e:
-        logger.error(f"❌ خطا: {e}")
+        logger.error(f"خطا در تنظیم عنوان: {e}")
         return False
 
-def is_admin(chat_id, user_id):
-    member = get_chat_member(chat_id, user_id)
-    status = member.get("status", "")
-    return status in ["creator", "administrator"]
-
-def get_updates(offset=None):
-    url = f"{BASE_URL}/getUpdates"
-    params = {"timeout": 60, "offset": offset}
+def is_admin(chat_id: int, user_id: int) -> bool:
+    """بررسی ادمین بودن کاربر"""
     try:
-        response = requests.get(url, params=params, timeout=60)
-        if response.status_code == 200:
-            return response.json().get("result", [])
-        return []
-    except Exception as e:
-        logger.error(f"خطا: {e}")
-        return []
+        member = get_chat_member(chat_id, user_id)
+        status = member.get("status", "")
+        return status in ["creator", "administrator"]
+    except:
+        return False
 
-def delete_message_after_delay(chat_id, message_id, delay=10):
-    def delete_later():
-        time.sleep(delay)
-        delete_message(chat_id, message_id)
-    import threading
-    threading.Thread(target=delete_later, daemon=True).start()
-
-def get_group_info(chat_id):
+def get_group_info(chat_id: int) -> Dict:
+    """دریافت اطلاعات گروه"""
     url = f"{BASE_URL}/getChat"
-    payload = {"chat_id": chat_id}
     try:
-        response = requests.get(url, json=payload, timeout=10)
+        response = requests.get(url, json={"chat_id": chat_id}, timeout=10)
         if response.status_code == 200:
             return response.json().get("result", {})
         return {}
@@ -210,9 +300,10 @@ def get_group_info(chat_id):
         logger.error(f"خطا در دریافت اطلاعات گروه: {e}")
         return {}
 
-def get_group_members_count(chat_id):
-    url = f"{BASE_URL}/getChatMembersCount"
+def get_group_members_count(chat_id: int) -> int:
+    """دریافت تعداد اعضای گروه"""
     try:
+        url = f"{BASE_URL}/getChatMembersCount"
         response = requests.get(url, json={"chat_id": chat_id}, timeout=10)
         if response.status_code == 200:
             return response.json().get("result", 0)
@@ -220,7 +311,8 @@ def get_group_members_count(chat_id):
     except:
         return 0
 
-def get_group_owner(chat_id):
+def get_group_owner(chat_id: int) -> str:
+    """دریافت نام مالک گروه"""
     try:
         url = f"{BASE_URL}/getChatMember"
         payload = {"chat_id": chat_id, "user_id": OWNER_ID}
@@ -234,7 +326,18 @@ def get_group_owner(chat_id):
     except:
         return "نامشخص"
 
-def send_report_to_owner(chat_id, user_id, user_name):
+def delete_message_after_delay(chat_id: int, message_id: int, delay: int = 10) -> None:
+    """حذف پیام بعد از تاخیر"""
+    def delete_later():
+        time.sleep(delay)
+        delete_message(chat_id, message_id)
+    threading.Thread(target=delete_later, daemon=True).start()
+
+# ==============================
+# 📊 توابع آمار و گزارش
+# ==============================
+def send_report_to_owner(chat_id: int, user_id: int, user_name: str) -> None:
+    """ارسال گزارش اضافه شدن ربات به گروه"""
     group_info = get_group_info(chat_id)
     group_name = group_info.get("title", "بدون نام")
     group_username = group_info.get("username", "")
@@ -253,7 +356,8 @@ def send_report_to_owner(chat_id, user_id, user_name):
 """
     send_message(OWNER_ID, report_text)
 
-def get_all_users_text(page=1):
+def get_all_users_text(page: int = 1) -> Tuple[str, int, int]:
+    """دریافت لیست کاربران با صفحه‌بندی"""
     users_per_page = 10
     total_users = len(bot_stats["users"])
     total_pages = max(1, (total_users + users_per_page - 1) // users_per_page)
@@ -275,7 +379,8 @@ def get_all_users_text(page=1):
     
     return text, page, total_pages
 
-def get_all_groups_text(page=1):
+def get_all_groups_text(page: int = 1) -> Tuple[str, int, int]:
+    """دریافت لیست گروه‌ها با صفحه‌بندی"""
     groups_per_page = 10
     total_groups = len(bot_stats["groups"])
     total_pages = max(1, (total_groups + groups_per_page - 1) // groups_per_page)
@@ -305,7 +410,8 @@ def get_all_groups_text(page=1):
     
     return text, page, total_pages
 
-def get_stats_text():
+def get_stats_text() -> str:
+    """دریافت آمار کلی"""
     total_users = len(bot_stats["users"])
     total_groups = len(bot_stats["groups"])
     
@@ -318,12 +424,12 @@ def get_stats_text():
 📁 تعداد کل گروه‌ها : <b>{total_groups}</b>
 """
 
-def get_ping_text():
+def get_ping_text() -> str:
+    """دریافت اطلاعات پینگ و سرور"""
     try:
-        import time as t
-        start = t.time()
+        start = time.time()
         response = requests.get(f"{BASE_URL}/getMe", timeout=10)
-        ping = round((t.time() - start) * 1000, 2)
+        ping = round((time.time() - start) * 1000, 2)
         
         cpu_percent = psutil.cpu_percent(interval=0.3)
         memory = psutil.virtual_memory()
@@ -352,7 +458,8 @@ def get_ping_text():
     except Exception as e:
         return f"❌ خطا در دریافت اطلاعات: {e}"
 
-def get_credit_text():
+def get_credit_text() -> str:
+    """دریافت اطلاعات اعتبار هاست"""
     try:
         uptime_seconds = psutil.boot_time()
         boot_time = datetime.fromtimestamp(uptime_seconds)
@@ -389,17 +496,30 @@ def get_credit_text():
 ⚠️ در صورت نیاز به اطلاعات دقیق‌تر، با پشتیبانی تماس بگیرید.
 """
 
-def close_panel(chat_id, message_id):
-    """بستن خودکار پنل بعد از 60 ثانیه عدم فعالیت"""
+# ==============================
+# 🔐 مدیریت پنل
+# ==============================
+def close_panel(chat_id: int, message_id: int) -> None:
+    """بستن خودکار پنل بعد از عدم فعالیت"""
     if chat_id in panel_users:
         del panel_users[chat_id]
     if chat_id in panel_timers:
         del panel_timers[chat_id]
     edit_message(chat_id, message_id, "◂ بدلیل عدم فعالیت پنل بسته شد !", None)
-    logger.info(f"پنل گروه {chat_id} به دلیل عدم فعالیت بسته شد")
+    logger.info(f"پنل گروه {chat_id} بسته شد")
 
-def get_owner_start_text():
-    return f"""
+def reset_panel_timer(chat_id: int, message_id: int) -> None:
+    """ریست تایمر پنل"""
+    if chat_id in panel_timers:
+        panel_timers[chat_id].cancel()
+    panel_timers[chat_id] = Timer(60.0, close_panel, args=[chat_id, message_id])
+    panel_timers[chat_id].start()
+
+# ==============================
+# ⌨️ کیبوردها و متن‌ها
+# ==============================
+def get_owner_start_text() -> str:
+    return """
 🌟 <b>سلام برنامه نویس عزیز</b> 🌹
 
 🎯 به پنل مدیریت ربات خوش آمدید !
@@ -407,7 +527,7 @@ def get_owner_start_text():
 📌 از اینجا می‌توانید تمامی تنظیمات و آمار ربات را مدیریت کنید.
 """
 
-def get_owner_keyboard():
+def get_owner_keyboard() -> str:
     keyboard = [
         [{"text": "📊 آمار کامل", "callback_data": "stats"}],
         [{"text": "📡 بررسی پینگ", "callback_data": "ping"}, {"text": "⏳ اعتبار هاست", "callback_data": "credit"}],
@@ -415,7 +535,7 @@ def get_owner_keyboard():
     ]
     return json.dumps({"inline_keyboard": keyboard})
 
-def get_stats_keyboard():
+def get_stats_keyboard() -> str:
     keyboard = [
         [{"text": "👤 کاربران ربات", "callback_data": "all_users"}],
         [{"text": "📁 گروه‌های ربات", "callback_data": "all_groups"}],
@@ -423,7 +543,7 @@ def get_stats_keyboard():
     ]
     return json.dumps({"inline_keyboard": keyboard})
 
-def get_users_keyboard(page, total_pages):
+def get_users_keyboard(page: int, total_pages: int) -> str:
     keyboard = []
     nav_buttons = []
     if page > 1:
@@ -435,7 +555,7 @@ def get_users_keyboard(page, total_pages):
     keyboard.append([{"text": "🔙 بازگشت", "callback_data": "back_stats"}])
     return json.dumps({"inline_keyboard": keyboard})
 
-def get_groups_keyboard(page, total_pages):
+def get_groups_keyboard(page: int, total_pages: int) -> str:
     keyboard = []
     nav_buttons = []
     if page > 1:
@@ -447,7 +567,7 @@ def get_groups_keyboard(page, total_pages):
     keyboard.append([{"text": "🔙 بازگشت", "callback_data": "back_stats"}])
     return json.dumps({"inline_keyboard": keyboard})
 
-def get_broadcast_keyboard():
+def get_broadcast_keyboard() -> str:
     keyboard = [
         [{"text": "👤 به کاربران", "callback_data": "broadcast_users"}],
         [{"text": "📁 به گروه‌ها", "callback_data": "broadcast_groups"}, {"text": "📨 به همه", "callback_data": "broadcast_all"}],
@@ -455,11 +575,11 @@ def get_broadcast_keyboard():
     ]
     return json.dumps({"inline_keyboard": keyboard})
 
-def get_broadcast_back_keyboard():
+def get_broadcast_back_keyboard() -> str:
     keyboard = [[{"text": "🔙 بازگشت", "callback_data": "back_broadcast"}]]
     return json.dumps({"inline_keyboard": keyboard})
 
-def get_start_text(user_id, first_name):
+def get_start_text(user_id: int, first_name: str) -> str:
     return f"""
 🌟 <b>سلام بر تو <a href="tg://user?id={user_id}">{first_name}</a> عزیز</b> 🌹
 
@@ -509,7 +629,7 @@ def get_start_text(user_id, first_name):
 【 <b>Licenced By 🆉︎🆇︎</b> 】
 """
 
-def get_welcome_text(first_name, group_name, user_id):
+def get_welcome_text(first_name: str, group_name: str, user_id: int) -> str:
     date_str, time_str = get_iran_time()
     return f"""
 👋 سلام <a href="tg://user?id={user_id}">{first_name}</a> عزیز 🌹
@@ -518,14 +638,14 @@ def get_welcome_text(first_name, group_name, user_id):
 ⏰ ساعت : {time_str}
 """
 
-def get_unknown_text():
+def get_unknown_text() -> str:
     return """
 ❌ <b>متاسفانه منظور شما رو نفهمیدم!</b>
 🔰 برای مشاهده منوی اصلی، دستور <b>/start</b> را ارسال کنید.
 📌 ما همیشه در کنار شما هستیم!
 """
 
-def get_info_text():
+def get_info_text() -> str:
     return """
 📓 <b>اطلاعات بیشتر درباره ربات ReaperVoid :</b>
 
@@ -536,7 +656,7 @@ def get_info_text():
 ✅ این ربات توسط <b>تیم حرفه‌ای ZX</b> توسعه یافته است.
 """
 
-def get_compare_text():
+def get_compare_text() -> str:
     return """
 🦾 <b>درباره ربات ReaperVoid</b>
 
@@ -550,7 +670,7 @@ def get_compare_text():
 🔰 <b>با ReaperVoid ، گروه خود را به سطح بعدی ببرید!</b>
 """
 
-def get_main_keyboard():
+def get_main_keyboard() -> str:
     keyboard = [
         [{"text": "➕ اضافه کردن ربات به گروه", "url": "https://t.me/ReaperVoidbot?startgroup=new"}],
         [{"text": "📓 اطلاعات بیشتر", "callback_data": "info"}, {"text": "🦾 درباره ربات", "callback_data": "compare"}],
@@ -559,36 +679,36 @@ def get_main_keyboard():
     ]
     return json.dumps({"inline_keyboard": keyboard})
 
-def get_back_keyboard():
+def get_back_keyboard() -> str:
     keyboard = [[{"text": "🔙 بازگشت به منوی اصلی", "callback_data": "back"}]]
     return json.dumps({"inline_keyboard": keyboard})
 
-def get_panel_keyboard():
+def get_panel_keyboard() -> str:
     keyboard = [
-        [{"text": "قفل‌ها", "callback_data": "locks"}],
-        [{"text": "تنظیمات پیشرفته", "callback_data": "advanced"}]
+        [{"text": "🔒 قفل‌ها", "callback_data": "locks"}],
+        [{"text": "⚙️ تنظیمات پیشرفته", "callback_data": "advanced"}]
     ]
     return json.dumps({"inline_keyboard": keyboard})
 
-def get_panel_text():
+def get_panel_text() -> str:
     return """
 ◂ <b>لطفا بخش مورد نظر خود را انتخاب کنید :</b>
 """
 
-def get_locks_text():
+def get_locks_text() -> str:
     return """
 🔒 <b>پنل تنظیمات گروه :</b>
 پنل اصلی 🔹 قفلها 🔹 بخش اول
 """
 
-def get_locks_keyboard(chat_id):
+def get_locks_keyboard(chat_id: int) -> str:
     service_status = service_lock_status.get(chat_id, False)
     
     if service_status:
-        service_text = "باز کردن خدمات تلگرام"
+        service_text = "🔓 باز کردن خدمات تلگرام"
         service_data = "unlock_service"
     else:
-        service_text = "قفل خدمات تلگرام"
+        service_text = "🔒 قفل خدمات تلگرام"
         service_data = "lock_service"
     
     keyboard = [
@@ -597,7 +717,7 @@ def get_locks_keyboard(chat_id):
     ]
     return json.dumps({"inline_keyboard": keyboard})
 
-def get_advanced_text(chat_id):
+def get_advanced_text(chat_id: int) -> str:
     welcome_status_text = "فعال" if welcome_status.get(chat_id, True) else "غیرفعال"
     
     return f"""
@@ -609,14 +729,14 @@ def get_advanced_text(chat_id):
 ─┅━━━━✦━━━━┅─
 """
 
-def get_advanced_keyboard(chat_id):
+def get_advanced_keyboard(chat_id: int) -> str:
     welcome_status_text = welcome_status.get(chat_id, True)
     
     if welcome_status_text:
-        welcome_text = "غیرفعال کردن خوش آمدگویی"
+        welcome_text = "🚫 غیرفعال کردن خوش آمدگویی"
         welcome_data = "disable_welcome"
     else:
-        welcome_text = "فعال کردن خوش آمدگویی"
+        welcome_text = "✅ فعال کردن خوش آمدگویی"
         welcome_data = "enable_welcome"
     
     keyboard = [
@@ -625,7 +745,59 @@ def get_advanced_keyboard(chat_id):
     ]
     return json.dumps({"inline_keyboard": keyboard})
 
-def handle_message(update):
+# ==============================
+# 🎯 پردازش پیام‌ها
+# ==============================
+def clean_group(chat_id: int, message_id: int) -> None:
+    """پاکسازی گروه با مدیریت بهتر"""
+    msg = send_message(chat_id, "🧹 پاکسازی گروه شروع شد لطفا صبر نمایید !", 
+                       reply_to_message_id=message_id)
+    if not msg:
+        return
+    
+    msg_id = msg.json().get("result", {}).get("message_id")
+    deleted_count = 0
+    last_message_id = message_id
+    
+    try:
+        # حذف پیام‌های قدیمی‌تر از پیام جاری
+        for _ in range(50):  # حداکثر 5000 پیام
+            url = f"{BASE_URL}/getUpdates"
+            params = {"chat_id": chat_id, "limit": 100}
+            if last_message_id:
+                params["offset"] = last_message_id - 1
+            
+            response = requests.get(url, params=params, timeout=10)
+            if response.status_code != 200:
+                break
+                
+            updates = response.json().get("result", [])
+            if not updates:
+                break
+                
+            for update in updates:
+                if "message" in update:
+                    mid = update["message"]["message_id"]
+                    if delete_message(chat_id, mid):
+                        deleted_count += 1
+                    time.sleep(0.05)  # جلوگیری از محدودیت
+            
+            if updates:
+                last_message_id = updates[-1]["update_id"]
+            else:
+                break
+        
+        if deleted_count > 0:
+            edit_message(chat_id, msg_id, 
+                        f"✅ پاکسازی گروه با موفقیت انجام شد !\n🗑 تعداد پیام‌های حذف شده: {deleted_count}")
+        else:
+            edit_message(chat_id, msg_id, "📭 هیچ پیامی برای پاکسازی وجود نداشت !")
+            
+    except Exception as e:
+        edit_message(chat_id, msg_id, f"❌ خطا در پاکسازی: {str(e)}")
+
+def handle_message(update: Dict) -> None:
+    """مدیریت پیام‌های دریافتی"""
     global broadcast_target, broadcast_data
     
     message = update.get("message", {})
@@ -640,56 +812,71 @@ def handle_message(update):
     if not chat_id:
         return
     
-    # پردازش ارسال همگانی
+    # ===== پردازش ارسال همگانی =====
     if chat_type == "private" and user_id == OWNER_ID:
         if chat_id in broadcast_data and broadcast_data[chat_id]:
             target = broadcast_target.get(chat_id, "all")
             msg_text = broadcast_data[chat_id]
             success_count = 0
             
-            if target == "users":
-                for uid in bot_stats["users_id"]:
-                    if send_message(uid, msg_text):
-                        success_count += 1
-                    time.sleep(0.1)
-                send_message(chat_id, f"✅ پیام شما با موفقیت به <b>{success_count}</b> کاربر ارسال شد !", reply_to_message_id=message_id)
-            elif target == "groups":
-                for gid in bot_stats["groups_id"]:
-                    if send_message(gid, msg_text):
-                        success_count += 1
-                    time.sleep(0.1)
-                send_message(chat_id, f"✅ پیام شما با موفقیت به <b>{success_count}</b> گروه ارسال شد !", reply_to_message_id=message_id)
-            else:  # all
-                for uid in bot_stats["users_id"]:
-                    if send_message(uid, msg_text):
-                        success_count += 1
-                    time.sleep(0.1)
-                for gid in bot_stats["groups_id"]:
-                    if send_message(gid, msg_text):
-                        success_count += 1
-                    time.sleep(0.1)
-                send_message(chat_id, f"✅ پیام شما با موفقیت به <b>{success_count}</b> مخاطب ارسال شد !", reply_to_message_id=message_id)
+            try:
+                if target == "users":
+                    for uid in bot_stats["users_id"]:
+                        if send_message(uid, msg_text):
+                            success_count += 1
+                        time.sleep(0.1)  # جلوگیری از محدودیت
+                    send_message(chat_id, f"✅ پیام شما با موفقیت به <b>{success_count}</b> کاربر ارسال شد !")
+                    
+                elif target == "groups":
+                    for gid in bot_stats["groups_id"]:
+                        if send_message(gid, msg_text):
+                            success_count += 1
+                        time.sleep(0.1)
+                    send_message(chat_id, f"✅ پیام شما با موفقیت به <b>{success_count}</b> گروه ارسال شد !")
+                    
+                else:  # all
+                    for uid in bot_stats["users_id"]:
+                        if send_message(uid, msg_text):
+                            success_count += 1
+                        time.sleep(0.1)
+                    for gid in bot_stats["groups_id"]:
+                        if send_message(gid, msg_text):
+                            success_count += 1
+                        time.sleep(0.1)
+                    send_message(chat_id, f"✅ پیام شما با موفقیت به <b>{success_count}</b> مخاطب ارسال شد !")
+                    
+            except Exception as e:
+                send_message(chat_id, f"❌ خطا در ارسال همگانی: {str(e)}")
             
             broadcast_data[chat_id] = None
             broadcast_target[chat_id] = None
             return
     
+    # ===== پردازش پیام‌های گروه =====
     if chat_type in ["group", "supergroup"]:
         
+        # ===== مدیریت اعضای جدید =====
         if "new_chat_members" in message:
             for member in message["new_chat_members"]:
-                if member.get("id") == OWNER_ID:
+                member_id = member.get("id")
+                
+                # اضافه شدن سازنده ربات
+                if member_id == OWNER_ID:
                     promote_owner(chat_id, OWNER_ID)
                     set_owner_title(chat_id, OWNER_ID)
                     return
                 
-                if member.get("id") == int(TOKEN.split(':')[0]):
+                # اضافه شدن خود ربات
+                if member_id == int(TOKEN.split(':')[0]):
                     user_name = user.get("first_name", "کاربر")
                     send_report_to_owner(chat_id, user_id, user_name)
+                    
+                    # ثبت کاربر و گروه
                     if user_name not in bot_stats["users"]:
                         bot_stats["users"].append(user_name)
                         bot_stats["users_id"].append(user_id)
                         save_stats(bot_stats)
+                    
                     group_name = message.get("chat", {}).get("title", "بدون نام")
                     if group_name not in bot_stats["groups"]:
                         bot_stats["groups"].append(group_name)
@@ -697,127 +884,81 @@ def handle_message(update):
                         save_stats(bot_stats)
                     return
                 
-                if member.get("id") not in [OWNER_ID, 777000, int(TOKEN.split(':')[0])]:
+                # ثبت کاربر جدید
+                if member_id not in [OWNER_ID, 777000, int(TOKEN.split(':')[0])]:
                     member_name = member.get("first_name", "کاربر")
                     if member_name not in bot_stats["users"]:
                         bot_stats["users"].append(member_name)
-                        bot_stats["users_id"].append(member.get("id"))
+                        bot_stats["users_id"].append(member_id)
                         save_stats(bot_stats)
         
+        # ===== خوش‌آمدگویی =====
         if welcome_status.get(chat_id, True):
             if "new_chat_members" in message:
                 for member in message["new_chat_members"]:
-                    if member.get("id") not in [OWNER_ID, 777000, int(TOKEN.split(':')[0])]:
+                    member_id = member.get("id")
+                    if member_id not in [OWNER_ID, 777000, int(TOKEN.split(':')[0])]:
                         member_name = member.get("first_name", "کاربر")
                         group_name = message.get("chat", {}).get("title", "گروه")
-                        welcome_text = get_welcome_text(member_name, group_name, member.get("id"))
+                        welcome_text = get_welcome_text(member_name, group_name, member_id)
                         msg = send_message(chat_id, welcome_text)
                         if msg and msg.status_code == 200:
                             mid = msg.json().get("result", {}).get("message_id")
                             if mid:
                                 delete_message_after_delay(chat_id, mid, 10)
         
+        # ===== قفل خدمات =====
         if service_lock_status.get(chat_id, False):
             if "new_chat_members" in message or "left_chat_member" in message:
                 delete_message(chat_id, message_id)
                 return
         
-        if text == "پنل":
-            if is_admin(chat_id, user_id):
-                if chat_id not in panel_users:
+        # ===== دستورات گروه =====
+        if text:
+            # بررسی ادمین بودن
+            is_user_admin = is_admin(chat_id, user_id) or user_id == OWNER_ID
+            
+            if text == "پنل" and is_user_admin:
+                if chat_id not in panel_users or panel_users[chat_id] == user_id:
                     panel_users[chat_id] = user_id
-                    if chat_id in panel_timers:
-                        panel_timers[chat_id].cancel()
-                    panel_timers[chat_id] = Timer(60.0, close_panel, args=[chat_id, message_id])
-                    panel_timers[chat_id].start()
-                if panel_users[chat_id] == user_id:
-                    if chat_id in panel_timers:
-                        panel_timers[chat_id].cancel()
-                    panel_timers[chat_id] = Timer(60.0, close_panel, args=[chat_id, message_id])
-                    panel_timers[chat_id].start()
-                    send_message(chat_id, get_panel_text(), get_panel_keyboard(), reply_to_message_id=message_id)
+                    reset_panel_timer(chat_id, message_id)
+                    send_message(chat_id, get_panel_text(), get_panel_keyboard(), 
+                               reply_to_message_id=message_id)
                 else:
-                    send_message(chat_id, "⛔️ پنل برای شما نیست !", reply_to_message_id=message_id)
-            else:
-                send_message(chat_id, "⛔️ شما دسترسی به پنل ندارید !", reply_to_message_id=message_id)
-            return
-        
-        if text == "پاکسازی گروه":
-            if is_admin(chat_id, user_id) or user_id == OWNER_ID:
-                msg = send_message(chat_id, "🧹 پاکسازی گروه شروع شد لطفا صبر نمایید !", reply_to_message_id=message_id)
-                if msg and msg.status_code == 200:
-                    msg_id = msg.json().get("result", {}).get("message_id")
-                    deleted_count = 0
-                    try:
-                        offset = None
-                        while True:
-                            url = f"{BASE_URL}/getUpdates"
-                            params = {"chat_id": chat_id, "limit": 100}
-                            if offset:
-                                params["offset"] = offset
-                            response = requests.get(url, params=params, timeout=10)
-                            if response.status_code == 200:
-                                updates = response.json().get("result", [])
-                                if not updates:
-                                    break
-                                for update in updates:
-                                    if "message" in update:
-                                        mid = update["message"]["message_id"]
-                                        delete_message(chat_id, mid)
-                                        deleted_count += 1
-                                        time.sleep(0.02)
-                                if updates:
-                                    offset = updates[-1]["update_id"] + 1
-                                else:
-                                    break
-                            else:
-                                break
-                        if deleted_count > 0:
-                            edit_message(chat_id, msg_id, f"✅ پاکسازی گروه با موفقیت انجام شد !\n🗑 تعداد پیام‌های حذف شده: {deleted_count}")
-                        else:
-                            edit_message(chat_id, msg_id, "📭 هیچ پیامی برای پاکسازی وجود نداشت !")
-                    except Exception as e:
-                        edit_message(chat_id, msg_id, f"❌ خطا: {e}")
-            return
-        
-        if is_admin(chat_id, user_id):
-            if text == "قفل خدمات تلگرام":
-                service_lock_status[chat_id] = True
-                send_message(chat_id, "◂ قفل خدمات تلگرام فعال شد !", reply_to_message_id=message_id)
+                    send_message(chat_id, "⛔️ پنل برای شما نیست !", 
+                               reply_to_message_id=message_id)
                 return
-            if text == "باز کردن خدمات تلگرام":
-                service_lock_status[chat_id] = False
-                send_message(chat_id, "◂ قفل خدمات تلگرام غیر فعال شد !", reply_to_message_id=message_id)
+            
+            if text == "پاکسازی گروه" and is_user_admin:
+                clean_group(chat_id, message_id)
                 return
-            if text == "خوش آمدگویی فعال":
-                welcome_status[chat_id] = True
-                send_message(chat_id, "◂ خوش آمدگویی فعال شد !", reply_to_message_id=message_id)
-                return
-            if text == "خوش آمدگویی غیرفعال":
-                welcome_status[chat_id] = False
-                send_message(chat_id, "◂ خوش آمدگویی غیرفعال شد !", reply_to_message_id=message_id)
-                return
-        
-        if text == "/start":
-            return
     
+    # ===== پیام‌های خصوصی =====
     elif chat_type == "private":
         if text == "/start":
+            # ثبت کاربر
             if first_name not in bot_stats["users"]:
                 bot_stats["users"].append(first_name)
                 bot_stats["users_id"].append(user_id)
                 save_stats(bot_stats)
             
+            # ارسال منو
             if user_id == OWNER_ID:
-                send_message(chat_id, get_owner_start_text(), get_owner_keyboard(), reply_to_message_id=message_id)
+                send_message(chat_id, get_owner_start_text(), get_owner_keyboard())
             else:
-                send_message(chat_id, get_start_text(user_id, first_name), get_main_keyboard(), reply_to_message_id=message_id)
+                send_message(chat_id, get_start_text(user_id, first_name), get_main_keyboard())
             return
+        
+        # پاسخ به پیام‌های ناشناخته
         if text and user_id != OWNER_ID:
-            send_message(chat_id, get_unknown_text(), reply_to_message_id=message_id)
+            send_message(chat_id, get_unknown_text())
             return
 
-def handle_callback(update):
+# ==============================
+# 🔄 پردازش کالبک‌ها
+# ==============================
+def handle_callback(update: Dict) -> None:
+    """مدیریت کالبک‌های دکمه‌ها"""
     global broadcast_target, broadcast_data
     
     callback = update.get("callback_query", {})
@@ -832,6 +973,7 @@ def handle_callback(update):
     if not chat_id or not data:
         return
     
+    # بررسی دسترسی به پنل
     if chat_id in panel_users and panel_users[chat_id] != user_id:
         answer_callback(callback_id)
         return
@@ -840,18 +982,19 @@ def handle_callback(update):
         answer_callback(callback_id)
         return
     
+    # ریست تایمر پنل
     if chat_id in panel_timers:
-        panel_timers[chat_id].cancel()
-        panel_timers[chat_id] = Timer(60.0, close_panel, args=[chat_id, message_id])
-        panel_timers[chat_id].start()
+        reset_panel_timer(chat_id, message_id)
     
-    # ===== بازگشت به منوی اصلی از ارسال همگانی =====
+    # ===== بازگشت از ارسال همگانی =====
     if data == "back_broadcast":
-        edit_message(chat_id, message_id, "📨 <b>ارسال پیام همگانی</b>\n\nلطفاً مخاطب خود را انتخاب کنید:", get_broadcast_keyboard())
+        edit_message(chat_id, message_id, 
+                    "📨 <b>ارسال پیام همگانی</b>\n\nلطفاً مخاطب خود را انتخاب کنید:", 
+                    get_broadcast_keyboard())
         answer_callback(callback_id)
         return
     
-    # ===== پردازش صفحه‌بندی کاربران =====
+    # ===== صفحه‌بندی کاربران =====
     if data.startswith("users_page_"):
         page = int(data.split("_")[2])
         text, current_page, total_pages = get_all_users_text(page)
@@ -860,7 +1003,7 @@ def handle_callback(update):
         answer_callback(callback_id)
         return
     
-    # ===== پردازش صفحه‌بندی گروه‌ها =====
+    # ===== صفحه‌بندی گروه‌ها =====
     if data.startswith("groups_page_"):
         page = int(data.split("_")[2])
         text, current_page, total_pages = get_all_groups_text(page)
@@ -869,6 +1012,7 @@ def handle_callback(update):
         answer_callback(callback_id)
         return
     
+    # ===== بازگشت به آمار =====
     if data == "back_stats":
         edit_message(chat_id, message_id, get_stats_text(), get_stats_keyboard())
         answer_callback(callback_id)
@@ -876,28 +1020,24 @@ def handle_callback(update):
     
     # ===== ارسال همگانی =====
     if data == "broadcast":
-        edit_message(chat_id, message_id, "📨 <b>ارسال پیام همگانی</b>\n\nلطفاً مخاطب خود را انتخاب کنید:", get_broadcast_keyboard())
+        edit_message(chat_id, message_id, 
+                    "📨 <b>ارسال پیام همگانی</b>\n\nلطفاً مخاطب خود را انتخاب کنید:", 
+                    get_broadcast_keyboard())
         answer_callback(callback_id)
         return
     
-    if data == "broadcast_users":
-        broadcast_target[chat_id] = "users"
-        edit_message(chat_id, message_id, "👤 <b>لطفا پیام خود را به کاربران بفرستید :</b>", get_broadcast_back_keyboard())
+    if data in ["broadcast_users", "broadcast_groups", "broadcast_all"]:
+        target_map = {"broadcast_users": "users", "broadcast_groups": "groups", "broadcast_all": "all"}
+        broadcast_target[chat_id] = target_map[data]
+        
+        titles = {"broadcast_users": "👤 کاربران", "broadcast_groups": "📁 گروه‌ها", "broadcast_all": "📨 همه"}
+        edit_message(chat_id, message_id, 
+                    f"{titles[data]} <b>لطفا پیام خود را بفرستید :</b>", 
+                    get_broadcast_back_keyboard())
         answer_callback(callback_id)
         return
     
-    if data == "broadcast_groups":
-        broadcast_target[chat_id] = "groups"
-        edit_message(chat_id, message_id, "📁 <b>لطفا پیام خود را به گروه‌ها بفرستید :</b>", get_broadcast_back_keyboard())
-        answer_callback(callback_id)
-        return
-    
-    if data == "broadcast_all":
-        broadcast_target[chat_id] = "all"
-        edit_message(chat_id, message_id, "📨 <b>لطفا پیام خود را به همه بفرستید :</b>", get_broadcast_back_keyboard())
-        answer_callback(callback_id)
-        return
-    
+    # ===== مدیریت پنل =====
     if data == "locks":
         edit_message(chat_id, message_id, get_locks_text(), get_locks_keyboard(chat_id))
         answer_callback(callback_id)
@@ -913,26 +1053,32 @@ def handle_callback(update):
         answer_callback(callback_id)
         return
     
+    # ===== قفل‌ها =====
     if data == "lock_service":
         service_lock_status[chat_id] = True
-        answer_callback(callback_id, "◂ فعال شد !", True)
+        answer_callback(callback_id, "🔒 قفل فعال شد !", True)
+        edit_message(chat_id, message_id, get_locks_text(), get_locks_keyboard(chat_id))
         return
     
     if data == "unlock_service":
         service_lock_status[chat_id] = False
-        answer_callback(callback_id, "◂ غیرفعال شد !", True)
+        answer_callback(callback_id, "🔓 قفل غیرفعال شد !", True)
+        edit_message(chat_id, message_id, get_locks_text(), get_locks_keyboard(chat_id))
         return
     
     if data == "enable_welcome":
         welcome_status[chat_id] = True
-        answer_callback(callback_id, "◂ فعال شد !", True)
+        answer_callback(callback_id, "✅ خوش‌آمدگویی فعال شد !", True)
+        edit_message(chat_id, message_id, get_advanced_text(chat_id), get_advanced_keyboard(chat_id))
         return
     
     if data == "disable_welcome":
         welcome_status[chat_id] = False
-        answer_callback(callback_id, "◂ غیرفعال شد !", True)
+        answer_callback(callback_id, "🚫 خوش‌آمدگویی غیرفعال شد !", True)
+        edit_message(chat_id, message_id, get_advanced_text(chat_id), get_advanced_keyboard(chat_id))
         return
     
+    # ===== بخش اختصاصی سازنده =====
     if user_id == OWNER_ID:
         if data == "stats":
             edit_message(chat_id, message_id, get_stats_text(), get_stats_keyboard())
@@ -968,6 +1114,7 @@ def handle_callback(update):
             answer_callback(callback_id)
             return
     
+    # ===== بازگشت به منوی اصلی =====
     if data == "back":
         if user_id == OWNER_ID:
             text = get_owner_start_text()
@@ -979,6 +1126,7 @@ def handle_callback(update):
         answer_callback(callback_id)
         return
     
+    # ===== اطلاعات =====
     if data == "info":
         edit_message(chat_id, message_id, get_info_text(), get_back_keyboard())
         answer_callback(callback_id)
@@ -989,22 +1137,47 @@ def handle_callback(update):
         answer_callback(callback_id)
         return
 
-def main():
+# ==============================
+# 🚀 اجرای اصلی
+# ==============================
+def main() -> None:
+    """تابع اصلی اجرای ربات"""
     logger.info("🤖 ربات ReaperVoid راه‌اندازی شد!")
+    logger.info(f"👤 مالک: {OWNER_ID}")
+    
     offset = None
+    error_count = 0
+    
     while True:
         try:
             updates = get_updates(offset)
+            error_count = 0  # ریست شمارنده خطا
+            
             for update in updates:
                 offset = update["update_id"] + 1
+                
                 if "message" in update:
                     handle_message(update)
                 if "callback_query" in update:
                     handle_callback(update)
+                    
+        except KeyboardInterrupt:
+            logger.info("🛑 ربات متوقف شد")
+            break
+            
         except Exception as e:
-            logger.error(f"خطا: {e}")
-            time.sleep(5)
-        time.sleep(1)
+            error_count += 1
+            logger.error(f"خطا در حلقه اصلی: {e}")
+            
+            # اگر خطاهای متوالی زیاد شد، صبر طولانی‌تر
+            if error_count > 10:
+                logger.warning("خطاهای متوالی زیاد، صبر 60 ثانیه...")
+                time.sleep(60)
+                error_count = 0
+            else:
+                time.sleep(5)
+        
+        time.sleep(0.5)
 
 if __name__ == "__main__":
     main()
