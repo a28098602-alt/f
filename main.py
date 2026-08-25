@@ -650,15 +650,52 @@ def get_panel_keyboard():
     ]
     return json.dumps({"inline_keyboard": keyboard})
 
+# ===== متن پنل جدید =====
 def get_panel_text():
     return """
-◂ <b>لطفا بخش مورد نظر خود را انتخاب کنید :</b>
+╮━━━〔 پنل مدیریت ربات 〕━━━╭
+│
+│ ◄ خوش آمدید، <a href="tg://user?id=7803165903">برنامه‌نویس گرامی</a>.
+│
+│ ⫸ مدیریت کامل ربات از این بخش امکان‌پذیر است.
+│ ⫸ تنظیمات، آمار و وضعیت عملکرد ربات
+│    در دسترس شما قرار دارد.
+│
+│ ◂ لطفاً بخش موردنظر خود را انتخاب نمایید.
+│
+╰━━━━━━━━━━━━━━━━━━━━━━╯
 """
 
+# ===== متن قفل‌ها جدید =====
 def get_locks_text():
     return """
-🔒 <b>پنل تنظیمات گروه :</b>
-پنل اصلی 🔹 قفلها 🔹 بخش اول
+╮━━━〔 قفل‌های ربات 〕━━━╭
+│
+│ ◄ بخش قفل‌ها و تنظیمات امنیتی
+│
+│ ⫸ قفل/باز کردن خدمات تلگرام
+│    (ورود و خروج اعضا)
+│
+│ ◂ لطفاً گزینه موردنظر را انتخاب کنید.
+│
+╰━━━━━━━━━━━━━━━━━━━━━━╯
+"""
+
+# ===== متن تنظیمات پیشرفته جدید =====
+def get_advanced_text(chat_id):
+    welcome_status_text = "فعال ✅" if welcome_status.get(chat_id, True) else "غیرفعال ❌"
+    
+    return f"""
+╮━━━〔 تنظیمات پیشرفته 〕━━━╭
+│
+│ ◄ مدیریت تنظیمات پیشرفته ربات
+│
+│ ⫸ وضعیت خوش‌آمدگویی : {welcome_status_text}
+│ ⫸ ضد تبلیغات : غیرفعال ❌
+│
+│ ◂ برای تغییر هر بخش، گزینه مربوطه را انتخاب کنید.
+│
+╰━━━━━━━━━━━━━━━━━━━━━━╯
 """
 
 def get_locks_keyboard(chat_id):
@@ -676,18 +713,6 @@ def get_locks_keyboard(chat_id):
         [{"text": "🔙 بازگشت", "callback_data": "panel_back"}]
     ]
     return json.dumps({"inline_keyboard": keyboard})
-
-def get_advanced_text(chat_id):
-    welcome_status_text = "فعال" if welcome_status.get(chat_id, True) else "غیرفعال"
-    
-    return f"""
-〽️ <b>تنظیمات پیشرفته :</b>
-
-  ▐ خوش‌ آمدگویی : {welcome_status_text}
-  ▐ ضد تبچی : غیرفعال
-
-─┅━━━━✦━━━━┅─
-"""
 
 def get_advanced_keyboard(chat_id):
     welcome_status_text = welcome_status.get(chat_id, True)
