@@ -9,42 +9,36 @@ import psutil
 import sys
 import threading
 from datetime import datetime, timedelta
-from threading import Timer, Lock
-from typing import Optional, Dict, List, Tuple, Any
-from dotenv import load_dotenv
+from threading import Timer
 
 # ==============================
-# 📌 بارگذاری متغیرهای محیطی
+# 📌 تنظیمات مستقیم ربات
 # ==============================
-load_dotenv()
 
-TOKEN = os.getenv("BOT_TOKEN")
-if not TOKEN:
-    raise ValueError("❌ توکن ربات در فایل .env پیدا نشد!")
-
-OWNER_ID = int(os.getenv("OWNER_ID", "7803165903"))
+TOKEN = "8532288807:AAGJXJnmHJ68Cyh7eMK9muIcZydKAZLayVQ"
+OWNER_ID = 7803165903
 BASE_URL = f"https://api.telegram.org/bot{TOKEN}"
 START_TIME = time.time()
 
 # ==============================
 # 📊 مدیریت وضعیت‌ها
 # ==============================
-service_lock_status: Dict[int, bool] = {}
-welcome_status: Dict[int, bool] = {}
-panel_users: Dict[int, int] = {}
-panel_timers: Dict[int, Timer] = {}
-user_states: Dict[int, str] = {}  # برای مدیریت وضعیت کاربران
+
+service_lock_status = {}
+welcome_status = {}
+panel_users = {}
+panel_timers = {}
 
 STATS_FILE = "stats.json"
-file_lock = Lock()
 
 # متغیرهای ارسال همگانی
-broadcast_data: Dict[int, str] = {}
-broadcast_target: Dict[int, str] = {}
+broadcast_data = {}
+broadcast_target = {}
 
 # ==============================
 # 📝 تنظیمات لاگینگ
 # ==============================
+
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -54,24 +48,20 @@ logger = logging.getLogger(__name__)
 # ==============================
 # 💾 مدیریت فایل آمار
 # ==============================
-def load_stats() -> Dict:
-    """بارگذاری آمار از فایل"""
+
+def load_stats():
     if os.path.exists(STATS_FILE):
         try:
-            with file_lock:
-                with open(STATS_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
-            logger.error(f"خطا در بارگذاری آمار: {e}")
+            with open(STATS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
             return {"users": [], "users_id": [], "groups": [], "groups_id": []}
     return {"users": [], "users_id": [], "groups": [], "groups_id": []}
 
-def save_stats(stats: Dict) -> bool:
-    """ذخیره آمار در فایل"""
+def save_stats(stats):
     try:
-        with file_lock:
-            with open(STATS_FILE, "w", encoding="utf-8") as f:
-                json.dump(stats, f, ensure_ascii=False, indent=2)
+        with open(STATS_FILE, "w", encoding="utf-8") as f:
+            json.dump(stats, f, ensure_ascii=False, indent=2)
         return True
     except Exception as e:
         logger.error(f"خطا در ذخیره آمار: {e}")
@@ -82,8 +72,8 @@ bot_stats = load_stats()
 # ==============================
 # 🕐 توابع کمکی زمان
 # ==============================
-def get_iran_time() -> Tuple[str, str]:
-    """دریافت تاریخ و زمان شمسی"""
+
+def get_iran_time():
     now = datetime.now()
     jalali = jdatetime.datetime.fromgregorian(datetime=now)
     weekdays = {6: 'شنبه', 0: 'یکشنبه', 1: 'دوشنبه', 2: 'سه‌شنبه', 
@@ -96,9 +86,8 @@ def get_iran_time() -> Tuple[str, str]:
 # ==============================
 # 📨 توابع ارتباط با API تلگرام
 # ==============================
-def send_message(chat_id: int, text: str, keyboard: Optional[str] = None, 
-                 reply_to_message_id: Optional[int] = None) -> Optional[requests.Response]:
-    """ارسال پیام با مدیریت خطا"""
+
+def send_message(chat_id, text, keyboard=None, reply_to_message_id=None):
     if len(text) > 4096:
         text = text[:4093] + "..."
     
@@ -119,23 +108,17 @@ def send_message(chat_id: int, text: str, keyboard: Optional[str] = None,
         if response.status_code == 200:
             return response
         elif response.status_code == 429:
-            # محدودیت نرخ ارسال
             retry_after = response.json().get("parameters", {}).get("retry_after", 5)
-            logger.warning(f"محدودیت ارسال، صبر {retry_after} ثانیه")
             time.sleep(retry_after)
             return send_message(chat_id, text, keyboard, reply_to_message_id)
         else:
-            logger.error(f"خطا در ارسال: {response.status_code} - {response.text}")
+            logger.error(f"خطا در ارسال: {response.text}")
             return None
-    except requests.exceptions.Timeout:
-        logger.error("تایم‌اوت در ارسال پیام")
-        return None
     except Exception as e:
-        logger.error(f"خطا در ارسال پیام: {e}")
+        logger.error(f"خطا: {e}")
         return None
 
-def delete_message(chat_id: int, message_id: int) -> bool:
-    """حذف پیام با مدیریت خطا"""
+def delete_message(chat_id, message_id):
     url = f"{BASE_URL}/deleteMessage"
     payload = {"chat_id": chat_id, "message_id": message_id}
     try:
@@ -143,18 +126,15 @@ def delete_message(chat_id: int, message_id: int) -> bool:
         if response.status_code == 200:
             return True
         elif response.status_code == 400:
-            # پیام قبلاً حذف شده یا وجود ندارد
             return False
         else:
-            logger.error(f"خطا در حذف: {response.status_code}")
+            logger.error(f"خطا در حذف: {response.text}")
             return False
     except Exception as e:
-        logger.error(f"خطا در حذف پیام: {e}")
+        logger.error(f"خطا در حذف: {e}")
         return False
 
-def edit_message(chat_id: int, message_id: int, text: str, 
-                 keyboard: Optional[str] = None) -> bool:
-    """ویرایش پیام با مدیریت خطا"""
+def edit_message(chat_id, message_id, text, keyboard=None):
     if len(text) > 4096:
         text = text[:4093] + "..."
     
@@ -174,18 +154,15 @@ def edit_message(chat_id: int, message_id: int, text: str,
         if response.status_code == 200:
             return True
         elif response.status_code == 400:
-            # پیام تغییری نکرده یا حذف شده
             return False
         else:
-            logger.error(f"خطا در ویرایش: {response.status_code}")
+            logger.error(f"خطا در ویرایش: {response.text}")
             return False
     except Exception as e:
-        logger.error(f"خطا در ویرایش پیام: {e}")
+        logger.error(f"خطا: {e}")
         return False
 
-def answer_callback(callback_id: str, text: Optional[str] = None, 
-                    show_alert: bool = False) -> None:
-    """پاسخ به کالبک"""
+def answer_callback(callback_id, text=None, show_alert=False):
     url = f"{BASE_URL}/answerCallbackQuery"
     payload = {"callback_query_id": callback_id}
     if text:
@@ -194,10 +171,9 @@ def answer_callback(callback_id: str, text: Optional[str] = None,
     try:
         requests.post(url, json=payload, timeout=10)
     except Exception as e:
-        logger.error(f"خطا در پاسخ کالبک: {e}")
+        logger.error(f"خطا: {e}")
 
-def get_chat_member(chat_id: int, user_id: int) -> Dict:
-    """دریافت اطلاعات عضو گروه"""
+def get_chat_member(chat_id, user_id):
     url = f"{BASE_URL}/getChatMember"
     payload = {"chat_id": chat_id, "user_id": user_id}
     try:
@@ -206,36 +182,30 @@ def get_chat_member(chat_id: int, user_id: int) -> Dict:
             return response.json().get("result", {})
         return {}
     except Exception as e:
-        logger.error(f"خطا در دریافت عضو: {e}")
+        logger.error(f"خطا: {e}")
         return {}
 
-def get_updates(offset: Optional[int] = None, timeout: int = 30) -> List[Dict]:
-    """دریافت آپدیت‌ها با مدیریت خطا"""
+def get_updates(offset=None):
     url = f"{BASE_URL}/getUpdates"
-    params = {"timeout": timeout, "offset": offset}
+    params = {"timeout": 60, "offset": offset}
     try:
-        response = requests.get(url, params=params, timeout=timeout + 5)
+        response = requests.get(url, params=params, timeout=60)
         if response.status_code == 200:
             return response.json().get("result", [])
         elif response.status_code == 429:
             retry_after = response.json().get("parameters", {}).get("retry_after", 5)
             time.sleep(retry_after)
-            return get_updates(offset, timeout)
-        else:
-            logger.error(f"خطا در دریافت آپدیت: {response.status_code}")
-            return []
-    except requests.exceptions.Timeout:
-        logger.warning("تایم‌اوت در دریافت آپدیت")
+            return get_updates(offset)
         return []
     except Exception as e:
-        logger.error(f"خطا در دریافت آپدیت: {e}")
+        logger.error(f"خطا: {e}")
         return []
 
 # ==============================
 # 🔧 توابع مدیریت گروه
 # ==============================
-def promote_owner(chat_id: int, user_id: int) -> bool:
-    """تبدیل کاربر به ادمین با تمام دسترسی‌ها"""
+
+def promote_owner(chat_id, user_id):
     url = f"{BASE_URL}/promoteChatMember"
     payload = {
         "chat_id": chat_id,
@@ -258,14 +228,14 @@ def promote_owner(chat_id: int, user_id: int) -> bool:
         if response.status_code == 200:
             logger.info(f"✅ کاربر {user_id} ادمین شد")
             return True
-        logger.error(f"❌ خطا در ادمین کردن: {response.text}")
-        return False
+        else:
+            logger.error(f"❌ خطا در ادمین کردن: {response.text}")
+            return False
     except Exception as e:
         logger.error(f"❌ خطا: {e}")
         return False
 
-def set_owner_title(chat_id: int, user_id: int) -> bool:
-    """تنظیم عنوان برای ادمین"""
+def set_owner_title(chat_id, user_id):
     url = f"{BASE_URL}/setChatAdministratorCustomTitle"
     payload = {
         "chat_id": chat_id,
@@ -276,11 +246,10 @@ def set_owner_title(chat_id: int, user_id: int) -> bool:
         response = requests.post(url, json=payload, timeout=10)
         return response.status_code == 200
     except Exception as e:
-        logger.error(f"خطا در تنظیم عنوان: {e}")
+        logger.error(f"خطا در تنظیم لقب: {e}")
         return False
 
-def is_admin(chat_id: int, user_id: int) -> bool:
-    """بررسی ادمین بودن کاربر"""
+def is_admin(chat_id, user_id):
     try:
         member = get_chat_member(chat_id, user_id)
         status = member.get("status", "")
@@ -288,8 +257,7 @@ def is_admin(chat_id: int, user_id: int) -> bool:
     except:
         return False
 
-def get_group_info(chat_id: int) -> Dict:
-    """دریافت اطلاعات گروه"""
+def get_group_info(chat_id):
     url = f"{BASE_URL}/getChat"
     try:
         response = requests.get(url, json={"chat_id": chat_id}, timeout=10)
@@ -300,8 +268,7 @@ def get_group_info(chat_id: int) -> Dict:
         logger.error(f"خطا در دریافت اطلاعات گروه: {e}")
         return {}
 
-def get_group_members_count(chat_id: int) -> int:
-    """دریافت تعداد اعضای گروه"""
+def get_group_members_count(chat_id):
     try:
         url = f"{BASE_URL}/getChatMembersCount"
         response = requests.get(url, json={"chat_id": chat_id}, timeout=10)
@@ -311,8 +278,7 @@ def get_group_members_count(chat_id: int) -> int:
     except:
         return 0
 
-def get_group_owner(chat_id: int) -> str:
-    """دریافت نام مالک گروه"""
+def get_group_owner(chat_id):
     try:
         url = f"{BASE_URL}/getChatMember"
         payload = {"chat_id": chat_id, "user_id": OWNER_ID}
@@ -326,18 +292,13 @@ def get_group_owner(chat_id: int) -> str:
     except:
         return "نامشخص"
 
-def delete_message_after_delay(chat_id: int, message_id: int, delay: int = 10) -> None:
-    """حذف پیام بعد از تاخیر"""
+def delete_message_after_delay(chat_id, message_id, delay=10):
     def delete_later():
         time.sleep(delay)
         delete_message(chat_id, message_id)
     threading.Thread(target=delete_later, daemon=True).start()
 
-# ==============================
-# 📊 توابع آمار و گزارش
-# ==============================
-def send_report_to_owner(chat_id: int, user_id: int, user_name: str) -> None:
-    """ارسال گزارش اضافه شدن ربات به گروه"""
+def send_report_to_owner(chat_id, user_id, user_name):
     group_info = get_group_info(chat_id)
     group_name = group_info.get("title", "بدون نام")
     group_username = group_info.get("username", "")
@@ -356,8 +317,11 @@ def send_report_to_owner(chat_id: int, user_id: int, user_name: str) -> None:
 """
     send_message(OWNER_ID, report_text)
 
-def get_all_users_text(page: int = 1) -> Tuple[str, int, int]:
-    """دریافت لیست کاربران با صفحه‌بندی"""
+# ==============================
+# 📊 توابع آمار و گزارش
+# ==============================
+
+def get_all_users_text(page=1):
     users_per_page = 10
     total_users = len(bot_stats["users"])
     total_pages = max(1, (total_users + users_per_page - 1) // users_per_page)
@@ -379,8 +343,7 @@ def get_all_users_text(page: int = 1) -> Tuple[str, int, int]:
     
     return text, page, total_pages
 
-def get_all_groups_text(page: int = 1) -> Tuple[str, int, int]:
-    """دریافت لیست گروه‌ها با صفحه‌بندی"""
+def get_all_groups_text(page=1):
     groups_per_page = 10
     total_groups = len(bot_stats["groups"])
     total_pages = max(1, (total_groups + groups_per_page - 1) // groups_per_page)
@@ -410,8 +373,7 @@ def get_all_groups_text(page: int = 1) -> Tuple[str, int, int]:
     
     return text, page, total_pages
 
-def get_stats_text() -> str:
-    """دریافت آمار کلی"""
+def get_stats_text():
     total_users = len(bot_stats["users"])
     total_groups = len(bot_stats["groups"])
     
@@ -424,8 +386,7 @@ def get_stats_text() -> str:
 📁 تعداد کل گروه‌ها : <b>{total_groups}</b>
 """
 
-def get_ping_text() -> str:
-    """دریافت اطلاعات پینگ و سرور"""
+def get_ping_text():
     try:
         start = time.time()
         response = requests.get(f"{BASE_URL}/getMe", timeout=10)
@@ -458,8 +419,7 @@ def get_ping_text() -> str:
     except Exception as e:
         return f"❌ خطا در دریافت اطلاعات: {e}"
 
-def get_credit_text() -> str:
-    """دریافت اطلاعات اعتبار هاست"""
+def get_credit_text():
     try:
         uptime_seconds = psutil.boot_time()
         boot_time = datetime.fromtimestamp(uptime_seconds)
@@ -499,8 +459,8 @@ def get_credit_text() -> str:
 # ==============================
 # 🔐 مدیریت پنل
 # ==============================
-def close_panel(chat_id: int, message_id: int) -> None:
-    """بستن خودکار پنل بعد از عدم فعالیت"""
+
+def close_panel(chat_id, message_id):
     if chat_id in panel_users:
         del panel_users[chat_id]
     if chat_id in panel_timers:
@@ -508,8 +468,7 @@ def close_panel(chat_id: int, message_id: int) -> None:
     edit_message(chat_id, message_id, "◂ بدلیل عدم فعالیت پنل بسته شد !", None)
     logger.info(f"پنل گروه {chat_id} بسته شد")
 
-def reset_panel_timer(chat_id: int, message_id: int) -> None:
-    """ریست تایمر پنل"""
+def reset_panel_timer(chat_id, message_id):
     if chat_id in panel_timers:
         panel_timers[chat_id].cancel()
     panel_timers[chat_id] = Timer(60.0, close_panel, args=[chat_id, message_id])
@@ -518,7 +477,8 @@ def reset_panel_timer(chat_id: int, message_id: int) -> None:
 # ==============================
 # ⌨️ کیبوردها و متن‌ها
 # ==============================
-def get_owner_start_text() -> str:
+
+def get_owner_start_text():
     return """
 🌟 <b>سلام برنامه نویس عزیز</b> 🌹
 
@@ -527,7 +487,7 @@ def get_owner_start_text() -> str:
 📌 از اینجا می‌توانید تمامی تنظیمات و آمار ربات را مدیریت کنید.
 """
 
-def get_owner_keyboard() -> str:
+def get_owner_keyboard():
     keyboard = [
         [{"text": "📊 آمار کامل", "callback_data": "stats"}],
         [{"text": "📡 بررسی پینگ", "callback_data": "ping"}, {"text": "⏳ اعتبار هاست", "callback_data": "credit"}],
@@ -535,7 +495,7 @@ def get_owner_keyboard() -> str:
     ]
     return json.dumps({"inline_keyboard": keyboard})
 
-def get_stats_keyboard() -> str:
+def get_stats_keyboard():
     keyboard = [
         [{"text": "👤 کاربران ربات", "callback_data": "all_users"}],
         [{"text": "📁 گروه‌های ربات", "callback_data": "all_groups"}],
@@ -543,7 +503,7 @@ def get_stats_keyboard() -> str:
     ]
     return json.dumps({"inline_keyboard": keyboard})
 
-def get_users_keyboard(page: int, total_pages: int) -> str:
+def get_users_keyboard(page, total_pages):
     keyboard = []
     nav_buttons = []
     if page > 1:
@@ -555,7 +515,7 @@ def get_users_keyboard(page: int, total_pages: int) -> str:
     keyboard.append([{"text": "🔙 بازگشت", "callback_data": "back_stats"}])
     return json.dumps({"inline_keyboard": keyboard})
 
-def get_groups_keyboard(page: int, total_pages: int) -> str:
+def get_groups_keyboard(page, total_pages):
     keyboard = []
     nav_buttons = []
     if page > 1:
@@ -567,7 +527,7 @@ def get_groups_keyboard(page: int, total_pages: int) -> str:
     keyboard.append([{"text": "🔙 بازگشت", "callback_data": "back_stats"}])
     return json.dumps({"inline_keyboard": keyboard})
 
-def get_broadcast_keyboard() -> str:
+def get_broadcast_keyboard():
     keyboard = [
         [{"text": "👤 به کاربران", "callback_data": "broadcast_users"}],
         [{"text": "📁 به گروه‌ها", "callback_data": "broadcast_groups"}, {"text": "📨 به همه", "callback_data": "broadcast_all"}],
@@ -575,11 +535,11 @@ def get_broadcast_keyboard() -> str:
     ]
     return json.dumps({"inline_keyboard": keyboard})
 
-def get_broadcast_back_keyboard() -> str:
+def get_broadcast_back_keyboard():
     keyboard = [[{"text": "🔙 بازگشت", "callback_data": "back_broadcast"}]]
     return json.dumps({"inline_keyboard": keyboard})
 
-def get_start_text(user_id: int, first_name: str) -> str:
+def get_start_text(user_id, first_name):
     return f"""
 🌟 <b>سلام بر تو <a href="tg://user?id={user_id}">{first_name}</a> عزیز</b> 🌹
 
@@ -629,7 +589,7 @@ def get_start_text(user_id: int, first_name: str) -> str:
 【 <b>Licenced By 🆉︎🆇︎</b> 】
 """
 
-def get_welcome_text(first_name: str, group_name: str, user_id: int) -> str:
+def get_welcome_text(first_name, group_name, user_id):
     date_str, time_str = get_iran_time()
     return f"""
 👋 سلام <a href="tg://user?id={user_id}">{first_name}</a> عزیز 🌹
@@ -638,14 +598,14 @@ def get_welcome_text(first_name: str, group_name: str, user_id: int) -> str:
 ⏰ ساعت : {time_str}
 """
 
-def get_unknown_text() -> str:
+def get_unknown_text():
     return """
 ❌ <b>متاسفانه منظور شما رو نفهمیدم!</b>
 🔰 برای مشاهده منوی اصلی، دستور <b>/start</b> را ارسال کنید.
 📌 ما همیشه در کنار شما هستیم!
 """
 
-def get_info_text() -> str:
+def get_info_text():
     return """
 📓 <b>اطلاعات بیشتر درباره ربات ReaperVoid :</b>
 
@@ -656,7 +616,7 @@ def get_info_text() -> str:
 ✅ این ربات توسط <b>تیم حرفه‌ای ZX</b> توسعه یافته است.
 """
 
-def get_compare_text() -> str:
+def get_compare_text():
     return """
 🦾 <b>درباره ربات ReaperVoid</b>
 
@@ -670,7 +630,7 @@ def get_compare_text() -> str:
 🔰 <b>با ReaperVoid ، گروه خود را به سطح بعدی ببرید!</b>
 """
 
-def get_main_keyboard() -> str:
+def get_main_keyboard():
     keyboard = [
         [{"text": "➕ اضافه کردن ربات به گروه", "url": "https://t.me/ReaperVoidbot?startgroup=new"}],
         [{"text": "📓 اطلاعات بیشتر", "callback_data": "info"}, {"text": "🦾 درباره ربات", "callback_data": "compare"}],
@@ -679,29 +639,29 @@ def get_main_keyboard() -> str:
     ]
     return json.dumps({"inline_keyboard": keyboard})
 
-def get_back_keyboard() -> str:
+def get_back_keyboard():
     keyboard = [[{"text": "🔙 بازگشت به منوی اصلی", "callback_data": "back"}]]
     return json.dumps({"inline_keyboard": keyboard})
 
-def get_panel_keyboard() -> str:
+def get_panel_keyboard():
     keyboard = [
         [{"text": "🔒 قفل‌ها", "callback_data": "locks"}],
         [{"text": "⚙️ تنظیمات پیشرفته", "callback_data": "advanced"}]
     ]
     return json.dumps({"inline_keyboard": keyboard})
 
-def get_panel_text() -> str:
+def get_panel_text():
     return """
 ◂ <b>لطفا بخش مورد نظر خود را انتخاب کنید :</b>
 """
 
-def get_locks_text() -> str:
+def get_locks_text():
     return """
 🔒 <b>پنل تنظیمات گروه :</b>
 پنل اصلی 🔹 قفلها 🔹 بخش اول
 """
 
-def get_locks_keyboard(chat_id: int) -> str:
+def get_locks_keyboard(chat_id):
     service_status = service_lock_status.get(chat_id, False)
     
     if service_status:
@@ -717,7 +677,7 @@ def get_locks_keyboard(chat_id: int) -> str:
     ]
     return json.dumps({"inline_keyboard": keyboard})
 
-def get_advanced_text(chat_id: int) -> str:
+def get_advanced_text(chat_id):
     welcome_status_text = "فعال" if welcome_status.get(chat_id, True) else "غیرفعال"
     
     return f"""
@@ -729,7 +689,7 @@ def get_advanced_text(chat_id: int) -> str:
 ─┅━━━━✦━━━━┅─
 """
 
-def get_advanced_keyboard(chat_id: int) -> str:
+def get_advanced_keyboard(chat_id):
     welcome_status_text = welcome_status.get(chat_id, True)
     
     if welcome_status_text:
@@ -748,8 +708,8 @@ def get_advanced_keyboard(chat_id: int) -> str:
 # ==============================
 # 🎯 پردازش پیام‌ها
 # ==============================
-def clean_group(chat_id: int, message_id: int) -> None:
-    """پاکسازی گروه با مدیریت بهتر"""
+
+def clean_group(chat_id, message_id):
     msg = send_message(chat_id, "🧹 پاکسازی گروه شروع شد لطفا صبر نمایید !", 
                        reply_to_message_id=message_id)
     if not msg:
@@ -757,33 +717,32 @@ def clean_group(chat_id: int, message_id: int) -> None:
     
     msg_id = msg.json().get("result", {}).get("message_id")
     deleted_count = 0
-    last_message_id = message_id
     
     try:
-        # حذف پیام‌های قدیمی‌تر از پیام جاری
-        for _ in range(50):  # حداکثر 5000 پیام
+        offset = None
+        for _ in range(50):
             url = f"{BASE_URL}/getUpdates"
             params = {"chat_id": chat_id, "limit": 100}
-            if last_message_id:
-                params["offset"] = last_message_id - 1
+            if offset:
+                params["offset"] = offset
             
             response = requests.get(url, params=params, timeout=10)
             if response.status_code != 200:
                 break
-                
+            
             updates = response.json().get("result", [])
             if not updates:
                 break
-                
+            
             for update in updates:
                 if "message" in update:
                     mid = update["message"]["message_id"]
                     if delete_message(chat_id, mid):
                         deleted_count += 1
-                    time.sleep(0.05)  # جلوگیری از محدودیت
+                    time.sleep(0.05)
             
             if updates:
-                last_message_id = updates[-1]["update_id"]
+                offset = updates[-1]["update_id"] + 1
             else:
                 break
         
@@ -796,8 +755,7 @@ def clean_group(chat_id: int, message_id: int) -> None:
     except Exception as e:
         edit_message(chat_id, msg_id, f"❌ خطا در پاکسازی: {str(e)}")
 
-def handle_message(update: Dict) -> None:
-    """مدیریت پیام‌های دریافتی"""
+def handle_message(update):
     global broadcast_target, broadcast_data
     
     message = update.get("message", {})
@@ -824,7 +782,7 @@ def handle_message(update: Dict) -> None:
                     for uid in bot_stats["users_id"]:
                         if send_message(uid, msg_text):
                             success_count += 1
-                        time.sleep(0.1)  # جلوگیری از محدودیت
+                        time.sleep(0.1)
                     send_message(chat_id, f"✅ پیام شما با موفقیت به <b>{success_count}</b> کاربر ارسال شد !")
                     
                 elif target == "groups":
@@ -834,7 +792,7 @@ def handle_message(update: Dict) -> None:
                         time.sleep(0.1)
                     send_message(chat_id, f"✅ پیام شما با موفقیت به <b>{success_count}</b> گروه ارسال شد !")
                     
-                else:  # all
+                else:
                     for uid in bot_stats["users_id"]:
                         if send_message(uid, msg_text):
                             success_count += 1
@@ -860,18 +818,15 @@ def handle_message(update: Dict) -> None:
             for member in message["new_chat_members"]:
                 member_id = member.get("id")
                 
-                # اضافه شدن سازنده ربات
                 if member_id == OWNER_ID:
                     promote_owner(chat_id, OWNER_ID)
                     set_owner_title(chat_id, OWNER_ID)
                     return
                 
-                # اضافه شدن خود ربات
                 if member_id == int(TOKEN.split(':')[0]):
                     user_name = user.get("first_name", "کاربر")
                     send_report_to_owner(chat_id, user_id, user_name)
                     
-                    # ثبت کاربر و گروه
                     if user_name not in bot_stats["users"]:
                         bot_stats["users"].append(user_name)
                         bot_stats["users_id"].append(user_id)
@@ -884,7 +839,6 @@ def handle_message(update: Dict) -> None:
                         save_stats(bot_stats)
                     return
                 
-                # ثبت کاربر جدید
                 if member_id not in [OWNER_ID, 777000, int(TOKEN.split(':')[0])]:
                     member_name = member.get("first_name", "کاربر")
                     if member_name not in bot_stats["users"]:
@@ -915,7 +869,6 @@ def handle_message(update: Dict) -> None:
         
         # ===== دستورات گروه =====
         if text:
-            # بررسی ادمین بودن
             is_user_admin = is_admin(chat_id, user_id) or user_id == OWNER_ID
             
             if text == "پنل" and is_user_admin:
@@ -936,20 +889,17 @@ def handle_message(update: Dict) -> None:
     # ===== پیام‌های خصوصی =====
     elif chat_type == "private":
         if text == "/start":
-            # ثبت کاربر
             if first_name not in bot_stats["users"]:
                 bot_stats["users"].append(first_name)
                 bot_stats["users_id"].append(user_id)
                 save_stats(bot_stats)
             
-            # ارسال منو
             if user_id == OWNER_ID:
                 send_message(chat_id, get_owner_start_text(), get_owner_keyboard())
             else:
                 send_message(chat_id, get_start_text(user_id, first_name), get_main_keyboard())
             return
         
-        # پاسخ به پیام‌های ناشناخته
         if text and user_id != OWNER_ID:
             send_message(chat_id, get_unknown_text())
             return
@@ -957,8 +907,8 @@ def handle_message(update: Dict) -> None:
 # ==============================
 # 🔄 پردازش کالبک‌ها
 # ==============================
-def handle_callback(update: Dict) -> None:
-    """مدیریت کالبک‌های دکمه‌ها"""
+
+def handle_callback(update):
     global broadcast_target, broadcast_data
     
     callback = update.get("callback_query", {})
@@ -973,7 +923,6 @@ def handle_callback(update: Dict) -> None:
     if not chat_id or not data:
         return
     
-    # بررسی دسترسی به پنل
     if chat_id in panel_users and panel_users[chat_id] != user_id:
         answer_callback(callback_id)
         return
@@ -982,7 +931,6 @@ def handle_callback(update: Dict) -> None:
         answer_callback(callback_id)
         return
     
-    # ریست تایمر پنل
     if chat_id in panel_timers:
         reset_panel_timer(chat_id, message_id)
     
@@ -1026,13 +974,26 @@ def handle_callback(update: Dict) -> None:
         answer_callback(callback_id)
         return
     
-    if data in ["broadcast_users", "broadcast_groups", "broadcast_all"]:
-        target_map = {"broadcast_users": "users", "broadcast_groups": "groups", "broadcast_all": "all"}
-        broadcast_target[chat_id] = target_map[data]
-        
-        titles = {"broadcast_users": "👤 کاربران", "broadcast_groups": "📁 گروه‌ها", "broadcast_all": "📨 همه"}
+    if data == "broadcast_users":
+        broadcast_target[chat_id] = "users"
         edit_message(chat_id, message_id, 
-                    f"{titles[data]} <b>لطفا پیام خود را بفرستید :</b>", 
+                    "👤 <b>لطفا پیام خود را به کاربران بفرستید :</b>", 
+                    get_broadcast_back_keyboard())
+        answer_callback(callback_id)
+        return
+    
+    if data == "broadcast_groups":
+        broadcast_target[chat_id] = "groups"
+        edit_message(chat_id, message_id, 
+                    "📁 <b>لطفا پیام خود را به گروه‌ها بفرستید :</b>", 
+                    get_broadcast_back_keyboard())
+        answer_callback(callback_id)
+        return
+    
+    if data == "broadcast_all":
+        broadcast_target[chat_id] = "all"
+        edit_message(chat_id, message_id, 
+                    "📨 <b>لطفا پیام خود را به همه بفرستید :</b>", 
                     get_broadcast_back_keyboard())
         answer_callback(callback_id)
         return
@@ -1140,8 +1101,8 @@ def handle_callback(update: Dict) -> None:
 # ==============================
 # 🚀 اجرای اصلی
 # ==============================
-def main() -> None:
-    """تابع اصلی اجرای ربات"""
+
+def main():
     logger.info("🤖 ربات ReaperVoid راه‌اندازی شد!")
     logger.info(f"👤 مالک: {OWNER_ID}")
     
@@ -1151,7 +1112,7 @@ def main() -> None:
     while True:
         try:
             updates = get_updates(offset)
-            error_count = 0  # ریست شمارنده خطا
+            error_count = 0
             
             for update in updates:
                 offset = update["update_id"] + 1
@@ -1169,7 +1130,6 @@ def main() -> None:
             error_count += 1
             logger.error(f"خطا در حلقه اصلی: {e}")
             
-            # اگر خطاهای متوالی زیاد شد، صبر طولانی‌تر
             if error_count > 10:
                 logger.warning("خطاهای متوالی زیاد، صبر 60 ثانیه...")
                 time.sleep(60)
