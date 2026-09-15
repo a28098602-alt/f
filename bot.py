@@ -1,14 +1,16 @@
 import asyncio
 import logging
 from datetime import datetime
+from io import BytesIO
 
 from aiogram import Bot, Dispatcher, F
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
-    Message, CallbackQuery,
-    BufferedInputFile, ReplyKeyboardRemove,
+    Message, CallbackQuery, BufferedInputFile,
 )
 
 from config import BOT_TOKEN, ALLOWED_USERS
@@ -23,7 +25,11 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
-bot = Bot(token=BOT_TOKEN)
+
+bot = Bot(
+    token=BOT_TOKEN,
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+)
 dp = Dispatcher()
 
 
@@ -67,7 +73,6 @@ async def cmd_start(m: Message):
         "<code>/add</code> (ریپلای)\n"
         "<code>/export</code>\n"
         "<code>/stats</code>",
-        parse_mode="HTML",
         reply_markup=main_menu(),
     )
 
@@ -79,22 +84,20 @@ async def cmd_id(m: Message):
         return
     p = m.text.split(maxsplit=1)
     if len(p) < 2 or not p[1].isdigit():
-        await m.answer("مثال: <code>/id 123456789</code>", parse_mode="HTML")
+        await m.answer("مثال: <code>/id 123456789</code>")
         return
     uid = int(p[1])
     u = await get_by_id(uid)
     await log_search(m.from_user.id, str(uid), "id", bool(u))
     if u:
-        await m.answer(fmt_user(u), parse_mode="HTML",
-                       reply_markup=user_actions(uid))
+        await m.answer(fmt_user(u), reply_markup=user_actions(uid))
     else:
         await m.answer("❌ پیدا نشد.")
 
 
 @dp.message(F.text == "🔍 جستجو با آیدی")
 async def btn_id(m: Message):
-    await m.answer("آیدی عددی رو بفرست:\n<code>/id 123456789</code>",
-                   parse_mode="HTML")
+    await m.answer("آیدی عددی رو بفرست:\n<code>/id 123456789</code>")
 
 
 # ══════════════ جستجو با یوزرنیم ══════════════
@@ -104,21 +107,19 @@ async def cmd_user(m: Message):
         return
     p = m.text.split(maxsplit=1)
     if len(p) < 2:
-        await m.answer("مثال: <code>/user @ali</code>", parse_mode="HTML")
+        await m.answer("مثال: <code>/user @ali</code>")
         return
     u = await get_by_username(p[1])
     await log_search(m.from_user.id, p[1], "username", bool(u))
     if u:
-        await m.answer(fmt_user(u), parse_mode="HTML",
-                       reply_markup=user_actions(u["user_id"]))
+        await m.answer(fmt_user(u), reply_markup=user_actions(u["user_id"]))
     else:
         await m.answer("❌ پیدا نشد.")
 
 
 @dp.message(F.text == "👤 جستجو با یوزرنیم")
 async def btn_user(m: Message):
-    await m.answer("یوزرنیم رو بفرست:\n<code>/user @ali</code>",
-                   parse_mode="HTML")
+    await m.answer("یوزرنیم رو بفرست:\n<code>/user @ali</code>")
 
 
 # ══════════════ جستجو با شماره ══════════════
@@ -128,22 +129,19 @@ async def cmd_phone(m: Message):
         return
     p = m.text.split(maxsplit=1)
     if len(p) < 2:
-        await m.answer("مثال: <code>/phone +989121234567</code>",
-                       parse_mode="HTML")
+        await m.answer("مثال: <code>/phone +989121234567</code>")
         return
     u = await get_by_phone(p[1])
     await log_search(m.from_user.id, p[1], "phone", bool(u))
     if u:
-        await m.answer(fmt_user(u), parse_mode="HTML",
-                       reply_markup=user_actions(u["user_id"]))
+        await m.answer(fmt_user(u), reply_markup=user_actions(u["user_id"]))
     else:
         await m.answer("❌ پیدا نشد.")
 
 
 @dp.message(F.text == "📱 جستجو با شماره")
 async def btn_phone(m: Message):
-    await m.answer("شماره رو بفرست:\n<code>/phone +98912...</code>",
-                   parse_mode="HTML")
+    await m.answer("شماره رو بفرست:\n<code>/phone +98912...</code>")
 
 
 # ══════════════ جستجوی نام (FTS) ══════════════
@@ -153,23 +151,21 @@ async def cmd_find(m: Message):
         return
     p = m.text.split(maxsplit=1)
     if len(p) < 2:
-        await m.answer("مثال: <code>/find ali</code>", parse_mode="HTML")
+        await m.answer("مثال: <code>/find ali</code>")
         return
     results = await search_by_name(p[1], limit=10)
     await log_search(m.from_user.id, p[1], "name", bool(results))
     if not results:
         await m.answer("❌ چیزی پیدا نشد.")
         return
-    await m.answer(f"🔎 <b>{len(results)}</b> نتیجه:", parse_mode="HTML")
+    await m.answer(f"🔎 <b>{len(results)}</b> نتیجه:")
     for u in results:
-        await m.answer(fmt_user(u), parse_mode="HTML",
-                       reply_markup=user_actions(u["user_id"]))
+        await m.answer(fmt_user(u), reply_markup=user_actions(u["user_id"]))
 
 
 @dp.message(F.text == "📝 جستجوی نام")
 async def btn_find(m: Message):
-    await m.answer("بخشی از نام رو بفرست:\n<code>/find ali</code>",
-                   parse_mode="HTML")
+    await m.answer("بخشی از نام رو بفرست:\n<code>/find ali</code>")
 
 
 # ══════════════ افزودن ══════════════
@@ -191,7 +187,7 @@ async def cmd_add(m: Message):
             k, v = token.split("=", 1)
             fields[k] = v
     await upsert_user(t.id, **fields)
-    await m.answer(f"✅ ذخیره شد: <code>{t.id}</code>", parse_mode="HTML")
+    await m.answer(f"✅ ذخیره شد: <code>{t.id}</code>")
 
 
 # ══════════════ ویرایش تعاملی ══════════════
@@ -204,9 +200,8 @@ async def cb_edit(cq: CallbackQuery, state: FSMContext):
     await state.update_data(uid=uid)
     await state.set_state(EditState.waiting_value)
     await cq.message.answer(
-        f"فرم رو بفرست (هر فیلد با `=`):\n"
-        f"<code>phone=+98912... note=مشتری</code>",
-        parse_mode="HTML",
+        "فرم رو بفرست (هر فیلد با `=`):\n"
+        "<code>phone=+98912... note=مشتری</code>"
     )
     await cq.answer()
 
@@ -223,13 +218,12 @@ async def edit_receive(m: Message, state: FSMContext):
             k, v = token.split("=", 1)
             fields[k] = v
     if not fields:
-        await m.answer("چیزی نفهمیدم. مثال: <code>phone=+98912...</code>",
-                       parse_mode="HTML")
+        await m.answer("چیزی نفهمیدم. مثال: <code>phone=+98912...</code>")
         return
     await upsert_user(uid, **fields)
     await state.clear()
     u = await get_by_id(uid)
-    await m.answer(f"✅ ویرایش شد.\n\n{fmt_user(u)}", parse_mode="HTML")
+    await m.answer(f"✅ ویرایش شد.\n\n{fmt_user(u)}")
 
 
 # ══════════════ حذف ══════════════
@@ -250,7 +244,7 @@ async def cmd_del(m: Message):
         return
     p = m.text.split(maxsplit=1)
     if len(p) < 2 or not p[1].isdigit():
-        await m.answer("مثال: <code>/del 123456789</code>", parse_mode="HTML")
+        await m.answer("مثال: <code>/del 123456789</code>")
         return
     ok = await delete_user(int(p[1]))
     await m.answer("🗑 حذف شد." if ok else "❌ پیدا نشد.")
@@ -267,8 +261,7 @@ async def cmd_stats(m: Message):
     await m.answer(
         f"📊 <b>آمار</b>\n\n"
         f"👥 کاربران: <b>{n}</b>\n"
-        f"🔎 جستجوها: <b>{s}</b>",
-        parse_mode="HTML",
+        f"🔎 جستجوها: <b>{s}</b>"
     )
 
 
@@ -287,7 +280,7 @@ async def cmd_logs(m: Message):
         mark = "✅" if r["found"] else "❌"
         lines.append(f"{mark} <code>{r['query']}</code> "
                      f"[{r['kind']}] — {r['ts']}")
-    await m.answer("\n".join(lines), parse_mode="HTML")
+    await m.answer("\n".join(lines))
 
 
 # ══════════════ خروجی Excel ══════════════
@@ -297,7 +290,6 @@ async def cmd_export(m: Message):
     if not allowed(m):
         return
     from openpyxl import Workbook
-    from io import BytesIO
 
     rows = await export_all()
     if not rows:
