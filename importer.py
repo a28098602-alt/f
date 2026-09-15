@@ -5,6 +5,7 @@ user_id,username,first_name,last_name,phone,note
 """
 import asyncio
 import csv
+import sys
 
 from database import init_db, upsert_user
 
@@ -26,7 +27,6 @@ async def import_csv(path: str):
 
 
 if __name__ == "__main__":
-    import sys
     if len(sys.argv) < 2:
         print("استفاده: python importer.py contacts.csv")
     else:
